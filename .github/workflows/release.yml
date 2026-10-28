@@ -51,6 +51,6 @@ jobs:
           VER="${{ steps.ver.outputs.version }}"
           gh release create "v$VER" dist/RotationTracker.exe \
             --title "Rotation Tracker v$VER" \
-            --notes "$(git log -1 --pretty=%B)"
+            --notes "$(git log -1 --pretty=%B | grep -v -E '^(Co-Authored-By|Claude-Session|Signed-off-by):')"
         env:
           GH_TOKEN: ${{ github.token }}
