@@ -1,0 +1,1059 @@
+#!/usr/bin/env python3
+"""
+Rotation Tracker - step through guild boss rotations turn by turn.
+
+Open a rotation (.json or .txt), see every action for the current turn,
+and press Next (or Space / Right arrow) to move on.
+
+You can also drag a rotation file onto the .exe to open it directly.
+"""
+import json
+import os
+import re
+import sys
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+
+APP_NAME = "Rotation Tracker"
+CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".rotation_tracker.json")
+
+# ----------------------------------------------------------------------------
+# Colors
+# ----------------------------------------------------------------------------
+BG = "#16181d"
+PANEL = "#1f2229"
+CARD = "#272b34"
+CARD_ALT = "#2a2533"
+FG = "#e8eaed"
+MUTED = "#9aa0aa"
+ACCENT = "#e5484d"
+NOTE_FG = "#f5c86b"
+
+BTN_COLORS = {
+    "S1": "#3b82f6",
+    "S2": "#22c55e",
+    "S3": "#a855f7",
+    "HL": "#f59e0b",
+    "GD": "#6b7280",
+    "GUARD": "#6b7280",
+    "AST": "#14b8a6",
+    "ATK": "#ef4444",
+    "ATTACK": "#ef4444",
+    "ITEM": "#ec4899",
+    "HP": "#e5484d",
+    "SKIP": "#4b5563",
+}
+DEFAULT_BTN_COLOR = "#64748b"
+
+CHAR_PALETTE = [
+    "#7dd3fc", "#fca5a5", "#86efac", "#fcd34d",
+    "#c4b5fd", "#f9a8d4", "#5eead4", "#fdba74",
+]
+
+KNOWN_BTNS = set(BTN_COLORS.keys())
+
+# Character-specific button names: (CHARACTER, BUTTON) -> text shown on the badge.
+# Rotation files can add their own with "buttonNames" (JSON) or "button:" lines (text).
+CHAR_BTN_NAMES = {
+    ("KOTONE", "AST"): "Go for Broke",
+}
+
+# Button names used for every character (unless a character-specific name above applies).
+BTN_NAMES = {
+    "GD": "Guard",
+}
+
+
+# ----------------------------------------------------------------------------
+# Parsing
+# ----------------------------------------------------------------------------
+def clean(s):
+    """Strip markdown bold markers and whitespace."""
+    return re.sub(r"\*\*|__", "", str(s if s is not None else "")).strip()
+
+
+def load_rotation(path):
+    with open(path, encoding="utf-8-sig") as f:
+        raw = f.read()
+    stripped = raw.lstrip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            return parse_json(json.loads(raw))
+        except json.JSONDecodeError as e:
+            if path.lower().endswith(".json"):
+                raise ValueError(f"This JSON file has a formatting error:\n{e}")
+    return parse_text(raw)
+
+
+def _unit_line(u, prefix=""):
+    if not isinstance(u, dict) or not u.get("name"):
+        return None
+    head = " ".join(x for x in [clean(u.get("name")), clean(u.get("awareness")),
+                                clean(u.get("rev"))] if x)
+    extras = []
+    if u.get("gear"):
+        extras.append(clean(u["gear"]))
+    cards = " / ".join(x for x in [clean(u.get("space")), clean(u.get("sunsky"))] if x)
+    if cards:
+        extras.append(cards)
+    if u.get("role"):
+        extras.append(clean(u["role"]))
+    if u.get("companion"):
+        extras.append("Companion: " + clean(u["companion"]))
+    line = prefix + head
+    if extras:
+        line += "  |  " + "  |  ".join(extras)
+    if u.get("note"):
+        line += "\n      - " + clean(u["note"])
+    return line
+
+
+def _unit(u, tag=""):
+    """Structured unit info for the Team window."""
+    if not isinstance(u, dict) or not clean(u.get("name")):
+        return None
+    return {
+        "name": clean(u.get("name")),
+        "tag": tag,
+        "awareness": clean(u.get("awareness")),
+        "rev": clean(u.get("rev")),
+        "weapon": clean(u.get("gear") or u.get("weapon")),
+        "cards": [c for c in (clean(u.get("space")), clean(u.get("sunsky"))) if c],
+        "role": clean(u.get("role")),
+        "companion": clean(u.get("companion")),
+        "note": clean(u.get("note")),
+    }
+
+
+def _persona(name, skills, note=""):
+    return {"name": clean(name), "skills": [clean(s) for s in skills if clean(s)], "note": clean(note)}
+
+
+def _btn_names(raw):
+    """Turn {"KOTONE Ast": "Go for Broke"} into {("KOTONE","AST"): "Go for Broke"}."""
+    out = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            parts = str(k).split()
+            if len(parts) >= 2 and clean(v):
+                out[(" ".join(parts[:-1]).upper(), parts[-1].upper())] = clean(v)
+    return out
+
+
+def norm_action(a):
+    """Turn one raw action into {char, btn, detail, alt, kind}. Returns None if empty."""
+    if isinstance(a, str):
+        a = a.strip()
+        return {"char": "", "btn": "", "detail": a, "alt": False, "kind": "note"} if a else None
+    if not isinstance(a, dict):
+        return None
+
+    char = clean(a.get("char"))
+    btn = clean(a.get("btn"))
+    persona = clean(a.get("persona"))
+    skill = clean(a.get("skill"))
+    song = clean(a.get("song"))
+    text = clean(a.get("text"))
+    alt = bool(a.get("alt"))
+
+    # HP display toggle row
+    hp = clean(a.get("hp"))
+    if hp:
+        return {"char": "", "btn": "HP", "detail": f"HP LOCK {hp.upper()}",
+                "alt": alt, "kind": "toggle"}
+
+    if a.get("hl") and not btn:
+        btn = "HL"
+
+    bits = []
+    if persona and skill:
+        bits.append(f"{persona} \u2192 {skill}")
+    elif persona:
+        bits.append(persona)
+    elif skill:
+        bits.append(skill)
+    if song:
+        bits.append("\u266a " + song)
+    if text and text.lower() not in " ".join(bits).lower():
+        bits.append(text)
+    detail = "   ".join(bits)
+
+    if not char and not btn:
+        if not detail:
+            return None
+        return {"char": "", "btn": "", "detail": detail, "alt": alt, "kind": "note"}
+
+    return {"char": char, "btn": btn, "detail": detail, "alt": alt, "kind": "action"}
+
+
+def parse_json(data):
+    if isinstance(data, list):
+        data = {"turns": data}
+    setup = data.get("setup") or {}
+
+    title = clean(setup.get("rotationName") or data.get("name") or data.get("title") or "Rotation")
+    meta = []
+    for key, label in [("boss", "Boss"), ("type", "Mode"), ("patch", "Patch"),
+                       ("score", "Score"), ("breaks", "Breaks"), ("side", "Side"),
+                       ("credits", "By")]:
+        v = clean(setup.get(key))
+        if v:
+            meta.append(f"{label}: {v}")
+
+    notes = clean(setup.get("notes") or data.get("notes"))
+    if data.get("teamNotes"):
+        notes = (notes + "\n\n" + clean(data["teamNotes"])).strip()
+
+    units = [x for x in (_unit(u) for u in data.get("units") or []) if x]
+    for extra, tag in ((data.get("elucidator"), "Elucidator"), (data.get("backup"), "Backup")):
+        x = _unit(extra, tag)
+        if x:
+            units.append(x)
+    personas = [_persona(p.get("name"), p.get("skills") or [], p.get("note"))
+                for p in data.get("personas") or [] if isinstance(p, dict) and p.get("name")]
+
+    team = []
+    for u in data.get("units") or []:
+        line = _unit_line(u)
+        if line:
+            team.append(line)
+    line = _unit_line(data.get("elucidator"), prefix="(Elucidator) ")
+    if line:
+        team.append(line)
+    line = _unit_line(data.get("backup"), prefix="(Backup) ")
+    if line:
+        team.append(line)
+    for p in data.get("personas") or []:
+        if isinstance(p, dict) and p.get("name"):
+            skills = ", ".join(clean(s) for s in p.get("skills", []) if clean(s))
+            pl = f"Persona {clean(p['name'])}" + (f": {skills}" if skills else "")
+            if p.get("note"):
+                pl += f"  ({clean(p['note'])})"
+            team.append(pl)
+
+    turns = []
+    for i, t in enumerate(data.get("turns") or []):
+        if not isinstance(t, dict):
+            continue
+        actions = [x for x in (norm_action(a) for a in t.get("actions") or []) if x]
+        turns.append({
+            "name": clean(t.get("name")) or f"Turn {i + 1}",
+            "note": clean(t.get("note")),
+            "actions": actions,
+        })
+
+    if not turns:
+        raise ValueError("No turns were found in this file.")
+    return {"title": title, "meta": meta, "notes": notes, "team": team, "turns": turns,
+            "units": units, "personas": personas,
+            "btn_names": _btn_names(data.get("buttonNames"))}
+
+
+HEADER_RE = re.compile(
+    r"^\s*(?:\[(?P<b>[^\]]+)\]"
+    r"|#+\s*(?P<h>.+?)"
+    r"|(?P<t>(?:turn|break|phase|wave|round)\s*[\w.\-]*)\s*:?)\s*$",
+    re.I,
+)
+META_RE = re.compile(r"^\s*(title|name|boss|mode|type|patch|score|credits|by|team|unit|persona|button|notes?)"
+                     r"\s*[:=]\s*(.*)$", re.I)
+
+
+def _text_unit(val):
+    """unit: WONDER DGR R3 | weapon: Cursed Ties | cards: A / B | role: X | note: Y | elucidator"""
+    segs = [s.strip() for s in val.split("|") if s.strip()]
+    if not segs:
+        return None
+    head = segs[0].split()
+    u = {"name": head[0], "tag": "", "awareness": "", "rev": "", "weapon": "", "cards": [],
+         "role": "", "companion": "", "note": ""}
+    for tok in head[1:]:
+        if re.fullmatch(r"R\d+", tok, re.I):
+            u["rev"] = tok.upper()
+        else:
+            u["awareness"] = (u["awareness"] + " " + tok).strip()
+    for seg in segs[1:]:
+        if ":" in seg:
+            k, v = [x.strip() for x in seg.split(":", 1)]
+            k = k.lower()
+            if k in ("weapon", "gear", "knife"):
+                u["weapon"] = v
+            elif k in ("cards", "card", "revelation", "revelations"):
+                u["cards"] = [c.strip() for c in re.split(r"[/,]", v) if c.strip()]
+            elif k in ("role", "companion", "note"):
+                u[k] = v
+        elif seg.lower() in ("elucidator", "backup"):
+            u["tag"] = seg.capitalize()
+        else:
+            u["note"] = (u["note"] + " " + seg).strip()
+    return u
+
+
+def _text_persona(val):
+    """persona: Vasuki - Mediarama, Matarukaja (healing passives)"""
+    note = ""
+    m = re.search(r"\(([^)]*)\)\s*$", val)
+    if m:
+        note, val = m.group(1), val[:m.start()]
+    val = val.strip()
+    name, _, rest = val.partition(" - ") if " - " in val else val.partition(":")
+    return _persona(name, re.split(r"\s*,\s*", rest) if rest.strip() else [], note)
+
+
+# ---- Shorthand format:  "T5 (21) Miku S1, Guard, Vasuki Heal, Berry S3"  /  "B2 ..." ----
+COMPACT_RE = re.compile(
+    r"^\s*(?P<kind>turn|t|break|b)\s*(?P<nums>\d+(?:\s*[-–]\s*\d+)*)\s*"
+    r"(?:\((?P<act>\d+)\))?\s*[:.\-]?\s*(?P<rest>.*?)\s*$",
+    re.I,
+)
+SHORT_UNIT_RE = re.compile(r"^\s*([A-Za-z][\w.]*(?:\s[A-Za-z][\w.]*)?)\s+-\s+(\S.*/.*\S)\s*$")
+SHORT_PERSONAS_RE = re.compile(r"^\s*(?:wonder(?:'s)?\s+)?personas?\s*:\s*(.+)$", re.I)
+BTN_TOKEN_RE = re.compile(r"^(S[123]|HL|GUARD|GD|AST|GFB|BUTTON)(?:X(\d+))?$")
+BTN_CANON = {"GUARD": "Gd", "GD": "Gd", "AST": "Ast", "GFB": "Ast", "BUTTON": "Button"}
+SKILL_BTNS = {"S1", "S2", "S3", "HL", "Ast", "Button"}
+EVERYONE = {"EVERYONE", "EVERYBODY", "ALL", "TEAM", "OTHERS"}
+
+
+def split_top(s, sep):
+    """Split on sep, ignoring separators inside parentheses."""
+    out, depth, buf = [], 0, ""
+    for ch in s:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        if ch == sep and depth == 0:
+            out.append(buf)
+            buf = ""
+        else:
+            buf += ch
+    out.append(buf)
+    return [x.strip() for x in out if x.strip()]
+
+
+def _short_personas(val):
+    out = []
+    for part in split_top(val, ","):
+        m = re.match(r"^\s*([^(]+?)\s*(?:\((.*)\))?\s*$", part)
+        if m:
+            out.append(_persona(m.group(1), split_top(m.group(2) or "", ","), ""))
+    return out
+
+
+def _turn_numbers(nums):
+    ns = [int(x) for x in re.split(r"\s*[-–]\s*", nums)]
+    if len(ns) == 2 and ns[1] > ns[0] + 1:
+        return list(range(ns[0], ns[1] + 1))
+    return ns
+
+
+def parse_compact_actions(text, chars, personas):
+    """Turn 'Miku S1, Guard, Vasuki Heal, Berry HL + Guard' into action dicts."""
+    actions = []
+    prev = ""
+    for part in split_top(text, ","):
+        group_char = ""
+        for i, sub in enumerate(split_top(part, "+")):
+            act = _compact_one(sub, chars, personas)
+            if act is None:
+                continue
+            if not act["char"] and act["kind"] == "action":
+                if i > 0 and group_char:              # "Twins Button + Guard" -> Twins guards
+                    act["char"] = group_char
+                elif act["btn"] in SKILL_BTNS and prev:   # "Dio HL, S2, S2" -> Dio's S2
+                    act["char"] = prev
+            if act["char"]:
+                group_char = act["char"]
+                # Wonder's HL is an interrupt: a bare "S2" after "Dio HL" belongs to whoever acted before
+                if not (act["char"] == "WONDER" and act["btn"] == "HL") or not prev:
+                    prev = act["char"]
+            actions.append(act)
+    return actions
+
+
+def _compact_one(t, chars, personas):
+    t = t.strip()
+    if not t:
+        return None
+    hp = re.match(r"^hp\s*lock\s*(on|off)?\s*$", t, re.I)
+    if hp:
+        return {"char": "", "btn": "HP", "detail": f"HP LOCK {(hp.group(1) or 'ON').upper()}",
+                "alt": False, "kind": "toggle"}
+
+    words = t.split()
+    char, persona = "", ""
+    w0 = re.sub(r"[^\w]", "", words[0]).upper()
+    if w0 in EVERYONE:
+        char = "EVERYONE"
+    elif w0 in chars:
+        char = w0
+    else:
+        for p in personas:
+            if len(w0) >= 3 and p.upper().startswith(w0):
+                char, persona = "WONDER", p
+                break
+    rest = words[1:] if char else words
+
+    btn = ""
+    if not re.search(r"\bor\b", t, re.I):          # "Guard or Heal" stays as plain text
+        depth = 0
+        for j, tok in enumerate(rest):
+            inside = depth > 0 or tok.startswith("(")
+            depth += tok.count("(") - tok.count(")")
+            if inside:
+                continue                       # ignore words inside (...) comments
+            m = BTN_TOKEN_RE.match(re.sub(r"[(),.]", "", tok).upper())
+            if m:
+                btn = BTN_CANON.get(m.group(1), m.group(1))
+                rest = rest[:j] + rest[j + 1:]
+                if m.group(2):
+                    rest = rest + [f"×{m.group(2)}"]
+                break
+    detail = " ".join(rest)
+    if persona:
+        detail = f"{persona} → {detail}" if detail and not btn else \
+                 (f"{persona}  {detail}".strip())
+    return {"char": char, "btn": btn, "detail": detail, "alt": False, "kind": "action"}
+
+
+NOTE_RE = re.compile(r"^\s*(?:note\s*[:=]|>)\s*(.*)$", re.I)
+ACTION_RE = re.compile(r"^\s*(?P<char>[^:]{1,30}?)\s*:\s*(?P<rest>.*)$")
+ALT_RE = re.compile(r"^\s*(?:\(alt\)|alt\s*[:\-])\s*", re.I)
+
+
+def parse_text(raw):
+    title = "Rotation"
+    meta, notes, team, turns, units, personas = [], [], [], [], [], []
+    btn_names = {}
+    cur = None
+    first = True
+    title_set = False
+
+    def known_chars():
+        return {u["name"].upper() for u in units} | {"WONDER"}
+
+    for line in raw.splitlines():
+        if not line.strip() or line.strip().startswith("//"):
+            continue
+        is_first, first = first, False
+
+        # Shorthand turn lines: T1 ..., B2 ..., T7-8-9 ..., Turn 3 (11) ...
+        cm = COMPACT_RE.match(line)
+        if cm:
+            is_break = cm.group("kind").lower().startswith("b")
+            label = "Break" if is_break else "TURN"
+            ns = _turn_numbers(cm.group("nums"))
+            group = (("B" if is_break else "T") + "-".join(str(n) for n in ns)) if len(ns) > 1 else ""
+            rest = cm.group("rest")
+            acts = parse_compact_actions(rest, known_chars(), [p["name"] for p in personas]) if rest else []
+            for k, n in enumerate(ns):
+                note = []
+                if cm.group("act") and k == 0:
+                    note.append(f"Action {cm.group('act')}")
+                if group:
+                    note.append(f"({group} are the same)")
+                cur = {"name": f"{label} {n}", "note": "  ".join(note),
+                       "actions": [dict(a) for a in acts]}
+                turns.append(cur)
+            continue
+
+        m = HEADER_RE.match(line)
+        if m:
+            name = (m.group("b") or m.group("h") or m.group("t")).strip()
+            if m.group("t") and not re.search(r"\d", name):
+                continue          # a bare "Break" line is just a divider
+            cur = {"name": name, "note": "", "actions": []}
+            turns.append(cur)
+            continue
+
+        if cur is None:
+            pm = SHORT_PERSONAS_RE.match(line)
+            if pm:
+                personas.extend(_short_personas(pm.group(1)))
+                continue
+            um = SHORT_UNIT_RE.match(line)
+            if um and not META_RE.match(line):
+                units.append({"name": um.group(1).strip(), "tag": "", "awareness": "", "rev": "",
+                              "weapon": "", "role": "", "companion": "", "note": "",
+                              "cards": [c.strip() for c in um.group(2).split("/") if c.strip()]})
+                continue
+            if re.match(r"^\s*[\d.,]+(?:\s*[-–~]\s*[\d.,]+)?\s*(?:billion|bil|b|million|mil|m)\s*$",
+                        line, re.I) and not is_first:
+                meta.append("Score: " + line.strip())
+                continue
+            wm = re.match(r"^\s*(R\d+)\s+([A-Za-z].*?)\s*$", line)
+            if wm and not is_first:
+                wonder = next((u for u in units if u["name"].upper() == "WONDER"), None)
+                if wonder is None:
+                    wonder = {"name": "Wonder", "tag": "", "awareness": "", "rev": "", "weapon": "",
+                              "cards": [], "role": "", "companion": "", "note": ""}
+                    units.append(wonder)
+                wonder["rev"], wonder["weapon"] = wm.group(1).upper(), wm.group(2)
+                continue
+            mm = META_RE.match(line)
+            if is_first and not mm:
+                title = line.strip().rstrip(":").strip()
+                title_set = True
+                continue
+            if mm:
+                key, val = mm.group(1).lower(), mm.group(2).strip()
+                if key in ("title", "name") and not (title_set and key == "name"):
+                    title = val
+                elif key.startswith("note"):
+                    notes.append(val)
+                elif key == "team":
+                    team.append(val)
+                elif key == "unit":
+                    u = _text_unit(val)
+                    if u:
+                        units.append(u)
+                elif key == "persona":
+                    personas.append(_text_persona(val))
+                elif key == "button":
+                    # button: KOTONE Ast = Go for Broke
+                    k, _, v = val.partition("=")
+                    btn_names.update(_btn_names({k.strip(): v.strip()}))
+                else:
+                    meta.append(f"{key.capitalize()}: {val}")
+            else:
+                notes.append(line.strip())
+            continue
+
+        nm = NOTE_RE.match(line)
+        if nm:
+            cur["note"] = (cur["note"] + " " + nm.group(1).strip()).strip()
+            continue
+
+        alt = False
+        if ALT_RE.match(line):
+            alt = True
+            line = ALT_RE.sub("", line, count=1)
+
+        am = ACTION_RE.match(line)
+        if am:
+            char = am.group("char").strip()
+            rest = am.group("rest").strip()
+            if char.upper() == "HP":
+                cur["actions"].append({"char": "", "btn": "HP", "detail": f"HP LOCK {rest.upper()}",
+                                       "alt": alt, "kind": "toggle"})
+                continue
+            parts = rest.split(None, 1)
+            btn, detail = "", rest
+            if parts and parts[0].upper() in KNOWN_BTNS:
+                btn = parts[0]
+                detail = parts[1] if len(parts) > 1 else ""
+            kind = "toggle" if btn.upper() == "HP" else "action"
+            cur["actions"].append({"char": char, "btn": btn, "detail": detail,
+                                   "alt": alt, "kind": kind})
+        else:
+            cur["actions"].append({"char": "", "btn": "", "detail": line.strip(),
+                                   "alt": alt, "kind": "note"})
+
+    if not turns:
+        raise ValueError(
+            "No turns were found.\n\nIn a text file, start each turn with a line like\n"
+            "TURN 1   or   Break 2   or   [Any name]"
+        )
+    return {"title": title, "meta": meta, "notes": "\n".join(notes), "team": team, "turns": turns,
+            "units": units, "personas": personas, "btn_names": btn_names}
+
+
+# ----------------------------------------------------------------------------
+# Config
+# ----------------------------------------------------------------------------
+def load_cfg():
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_cfg(cfg):
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+
+
+# ----------------------------------------------------------------------------
+# GUI
+# ----------------------------------------------------------------------------
+class App(tk.Tk):
+    def __init__(self, start_file=None):
+        super().__init__()
+        self.title(APP_NAME)
+        self.configure(bg=BG)
+        self.cfg = load_cfg()
+        self.geometry(self.cfg.get("geometry", "600x720"))
+        self.minsize(420, 420)
+        self.scale = float(self.cfg.get("scale", 1.0))
+        self.rot = None
+        self.path = None
+        self.idx = 0
+        self.char_colors = {}
+        self.wrap_labels = []
+        self.on_top = tk.BooleanVar(value=bool(self.cfg.get("on_top", False)))
+        self.attributes("-topmost", self.on_top.get())
+
+        self._style()
+        self._build()
+        self._bind_keys()
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        target = start_file or self.cfg.get("last_file")
+        if target and os.path.exists(target):
+            self.open_file(target, resume=True)
+        else:
+            self.render()
+
+    # ---- fonts ----
+    def f(self, size, weight="normal", slant="roman"):
+        return ("Segoe UI", max(7, int(round(size * self.scale))), weight, slant)
+
+    def _style(self):
+        st = ttk.Style(self)
+        try:
+            st.theme_use("clam")
+        except tk.TclError:
+            pass
+        st.configure("TCombobox", fieldbackground=PANEL, background=PANEL,
+                     foreground=FG, arrowcolor=FG)
+        st.map("TCombobox", fieldbackground=[("readonly", PANEL)],
+               foreground=[("readonly", FG)])
+        self.option_add("*TCombobox*Listbox.background", PANEL)
+        self.option_add("*TCombobox*Listbox.foreground", FG)
+        self.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+
+    def _btn(self, parent, text, cmd, bg=PANEL, fg=FG, size=10, bold=False, padx=10, pady=4):
+        b = tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg,
+                      activebackground=ACCENT, activeforeground="white",
+                      relief="flat", bd=0, cursor="hand2",
+                      font=self.f(size, "bold" if bold else "normal"),
+                      padx=padx, pady=pady)
+        return b
+
+    def _build(self):
+        # Toolbar
+        self.toolbar = tk.Frame(self, bg=BG)
+        self.toolbar.pack(fill="x", padx=10, pady=(10, 4))
+        self._btn(self.toolbar, "Open\u2026", self.choose_file).pack(side="left")
+        self._btn(self.toolbar, "Team", self.show_team).pack(side="left", padx=(6, 0))
+        self._btn(self.toolbar, "Info", self.show_info).pack(side="left", padx=(6, 0))
+        self._btn(self.toolbar, "Restart", self.restart).pack(side="left", padx=(6, 0))
+        tk.Checkbutton(self.toolbar, text="On top", variable=self.on_top,
+                       command=self.toggle_top, bg=BG, fg=FG, selectcolor=PANEL,
+                       activebackground=BG, activeforeground=FG,
+                       font=self.f(10)).pack(side="right")
+        self._btn(self.toolbar, "A+", lambda: self.zoom(0.1)).pack(side="right", padx=(0, 8))
+        self._btn(self.toolbar, "A\u2212", lambda: self.zoom(-0.1)).pack(side="right", padx=(0, 4))
+
+        # Header
+        self.header = tk.Frame(self, bg=BG)
+        self.header.pack(fill="x", padx=12)
+        self.title_lbl = tk.Label(self.header, bg=BG, fg=MUTED, anchor="w", justify="left")
+        self.title_lbl.pack(fill="x")
+
+        # Turn row
+        self.turn_row = tk.Frame(self, bg=BG)
+        self.turn_row.pack(fill="x", padx=12, pady=(6, 0))
+        self.turn_lbl = tk.Label(self.turn_row, bg=BG, fg=FG, anchor="w")
+        self.turn_lbl.pack(side="left")
+        self.progress_lbl = tk.Label(self.turn_row, bg=BG, fg=MUTED)
+        self.progress_lbl.pack(side="left", padx=(10, 0), pady=(8, 0))
+        self.jump = ttk.Combobox(self.turn_row, state="readonly", width=18)
+        self.jump.pack(side="right", pady=(6, 0))
+        self.jump.bind("<<ComboboxSelected>>", lambda e: self.go(self.jump.current()))
+
+        self.bar = tk.Canvas(self, height=6, bg=PANEL, highlightthickness=0)
+        self.bar.pack(fill="x", padx=12, pady=(6, 4))
+
+        self.note_lbl = tk.Label(self, bg=BG, fg=NOTE_FG, anchor="w", justify="left")
+        self.note_lbl.pack(fill="x", padx=12)
+
+        # Bottom nav (packed before the list so it stays visible)
+        self.nav = tk.Frame(self, bg=BG)
+        self.nav.pack(side="bottom", fill="x", padx=10, pady=10)
+        self.prev_btn = self._btn(self.nav, "\u25c0  Prev", self.prev, size=13, pady=10)
+        self.prev_btn.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.next_btn = self._btn(self.nav, "Next turn  \u25b6", self.next, bg=ACCENT,
+                                  fg="white", size=13, bold=True, pady=10)
+        self.next_btn.pack(side="left", fill="x", expand=True, padx=(5, 0))
+
+        # Scrollable actions list
+        wrap = tk.Frame(self, bg=BG)
+        wrap.pack(fill="both", expand=True, padx=10, pady=(6, 0))
+        self.canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0)
+        self.vsb = tk.Scrollbar(wrap, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.vsb.set)
+        self.vsb.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.list_frame = tk.Frame(self.canvas, bg=BG)
+        self.list_win = self.canvas.create_window((0, 0), window=self.list_frame, anchor="nw")
+        self.list_frame.bind("<Configure>",
+                             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
+        self.bind_all("<MouseWheel>", self._on_wheel)
+        self.bind_all("<Button-4>", lambda e: self.canvas.yview_scroll(-1, "units"))
+        self.bind_all("<Button-5>", lambda e: self.canvas.yview_scroll(1, "units"))
+
+        self.bind("<Configure>", self._on_window_resize)
+
+    def _bind_keys(self):
+        for k in ("<Right>", "<space>", "<Return>", "<Next>", "<d>", "<D>"):
+            self.bind(k, lambda e: self.next())
+        for k in ("<Left>", "<BackSpace>", "<Prior>", "<a>", "<A>"):
+            self.bind(k, lambda e: self.prev())
+        self.bind("<Home>", lambda e: self.go(0))
+        self.bind("<End>", lambda e: self.go(len(self.rot["turns"]) - 1) if self.rot else None)
+        self.bind("<Control-o>", lambda e: self.choose_file())
+        self.bind("<t>", lambda e: self.show_team())
+        self.bind("<T>", lambda e: self.show_team())
+        self.bind("<Control-plus>", lambda e: self.zoom(0.1))
+        self.bind("<Control-equal>", lambda e: self.zoom(0.1))
+        self.bind("<Control-minus>", lambda e: self.zoom(-0.1))
+
+    def _on_wheel(self, e):
+        self.canvas.yview_scroll(int(-e.delta / 120) or (-1 if e.delta > 0 else 1), "units")
+
+    def _on_canvas_resize(self, e):
+        self.canvas.itemconfigure(self.list_win, width=e.width)
+        for lbl, extra in self.wrap_labels:
+            lbl.configure(wraplength=max(100, e.width - extra))
+
+    def _on_window_resize(self, e):
+        if e.widget is self:
+            w = max(200, self.winfo_width() - 30)
+            self.note_lbl.configure(wraplength=w)
+            self.title_lbl.configure(wraplength=w)
+
+    # ---- file handling ----
+    def choose_file(self):
+        start = os.path.dirname(self.path) if self.path else os.path.expanduser("~")
+        path = filedialog.askopenfilename(
+            title="Open rotation", initialdir=start,
+            filetypes=[("Rotation files", "*.json *.txt"), ("JSON", "*.json"),
+                       ("Text", "*.txt"), ("All files", "*.*")])
+        if path:
+            self.open_file(path)
+
+    def open_file(self, path, resume=False):
+        try:
+            rot = load_rotation(path)
+        except Exception as e:
+            messagebox.showerror(APP_NAME, f"Couldn't open this rotation:\n\n{e}")
+            return
+        self.rot = rot
+        self.path = os.path.abspath(path)
+        self.char_colors = {}
+        for u in rot.get("units", []):
+            c = u["name"].upper()
+            if c not in self.char_colors:
+                self.char_colors[c] = CHAR_PALETTE[len(self.char_colors) % len(CHAR_PALETTE)]
+        for t in rot["turns"]:
+            for a in t["actions"]:
+                c = a["char"].upper()
+                if c and c not in self.char_colors:
+                    self.char_colors[c] = CHAR_PALETTE[len(self.char_colors) % len(CHAR_PALETTE)]
+        positions = self.cfg.get("positions", {})
+        self.idx = positions.get(self.path, 0) if resume else 0
+        self.idx = max(0, min(self.idx, len(rot["turns"]) - 1))
+        self.cfg["last_file"] = self.path
+        self.title(f"{rot['title']} \u2014 {APP_NAME}")
+        self.jump.configure(values=[f"{i + 1}. {t['name']}" for i, t in enumerate(rot["turns"])])
+        self.render()
+        if not resume and rot.get("notes"):
+            self.show_info()
+
+    # ---- navigation ----
+    def go(self, i):
+        if not self.rot:
+            return
+        self.idx = max(0, min(i, len(self.rot["turns"]) - 1))
+        self.render()
+        self.cfg.setdefault("positions", {})[self.path] = self.idx
+        save_cfg(self.cfg)
+
+    def next(self):
+        if self.rot:
+            self.go(self.idx + 1)
+
+    def prev(self):
+        if self.rot:
+            self.go(self.idx - 1)
+
+    def restart(self):
+        if self.rot:
+            self.go(0)
+
+    def zoom(self, d):
+        self.scale = max(0.6, min(2.5, round(self.scale + d, 2)))
+        self.cfg["scale"] = self.scale
+        for w in self.toolbar.winfo_children():
+            try:
+                w.configure(font=self.f(10))
+            except tk.TclError:
+                pass
+        self.prev_btn.configure(font=self.f(13))
+        self.next_btn.configure(font=self.f(13, "bold"))
+        self.render()
+
+    def toggle_top(self):
+        self.attributes("-topmost", self.on_top.get())
+        self.cfg["on_top"] = self.on_top.get()
+
+    # ---- drawing ----
+    def render(self):
+        for w in self.list_frame.winfo_children():
+            w.destroy()
+        self.wrap_labels = []
+        self.title_lbl.configure(font=self.f(10))
+        self.turn_lbl.configure(font=self.f(24, "bold"))
+        self.progress_lbl.configure(font=self.f(11))
+        self.note_lbl.configure(font=self.f(11, slant="italic"))
+
+        if not self.rot:
+            self.title_lbl.configure(text="")
+            self.turn_lbl.configure(text="No rotation loaded")
+            self.progress_lbl.configure(text="")
+            self.note_lbl.configure(text="")
+            tk.Label(self.list_frame, text="Click Open\u2026 (or Ctrl+O) to load a .json or .txt rotation.\n\n"
+                     "Keys: Space / \u2192 = next turn,  \u2190 = previous turn",
+                     bg=BG, fg=MUTED, font=self.f(11), justify="left").pack(anchor="w", pady=20, padx=4)
+            self.prev_btn.configure(state="disabled")
+            self.next_btn.configure(state="disabled")
+            self._draw_bar(0)
+            return
+
+        turns = self.rot["turns"]
+        t = turns[self.idx]
+        sub = self.rot["title"]
+        if self.rot["meta"]:
+            sub += "   \u00b7   " + "   \u00b7   ".join(self.rot["meta"][:4])
+        self.title_lbl.configure(text=sub)
+        self.turn_lbl.configure(text=t["name"])
+        self.progress_lbl.configure(text=f"{self.idx + 1} / {len(turns)}")
+        self.note_lbl.configure(text=t["note"])
+        self.jump.current(self.idx)
+        self._draw_bar((self.idx + 1) / len(turns))
+
+        if not t["actions"]:
+            tk.Label(self.list_frame, text="(No actions listed for this turn)", bg=BG, fg=MUTED,
+                     font=self.f(11)).pack(anchor="w", pady=10, padx=4)
+
+        width = max(300, self.canvas.winfo_width())
+        step = 0
+        for a in t["actions"]:
+            if a["kind"] == "note":
+                lbl = tk.Label(self.list_frame, text="\u26a0  " + a["detail"], bg=BG, fg=NOTE_FG,
+                               font=self.f(11, "bold"), anchor="w", justify="left",
+                               wraplength=width - 30)
+                lbl.pack(fill="x", padx=4, pady=(4, 6))
+                self.wrap_labels.append((lbl, 30))
+                continue
+
+            step += 1
+            card = tk.Frame(self.list_frame, bg=CARD_ALT if a["alt"] else CARD)
+            card.pack(fill="x", pady=3, padx=2)
+            cbg = card["bg"]
+
+            tk.Label(card, text=str(step), bg=cbg, fg=MUTED, font=self.f(11),
+                     width=3).pack(side="left", padx=(6, 0), pady=8)
+
+            if a["char"]:
+                tk.Label(card, text=a["char"].upper(), bg=cbg,
+                         fg=self.char_colors.get(a["char"].upper(), FG),
+                         font=self.f(14, "bold"), width=9, anchor="w").pack(side="left", padx=(4, 6))
+
+            if a["btn"]:
+                color = BTN_COLORS.get(a["btn"].upper(), DEFAULT_BTN_COLOR)
+                tk.Label(card, text=self.btn_label(a["char"], a["btn"]), bg=color, fg="white", font=self.f(13, "bold"),
+                         padx=10, pady=2).pack(side="left", padx=(0, 10))
+
+            extra = 260
+            detail = a["detail"]
+            if a["alt"]:
+                tk.Label(card, text="ALT", bg="#4c3a66", fg="#e9d5ff", font=self.f(9, "bold"),
+                         padx=6).pack(side="left", padx=(0, 8))
+                extra += 50
+            if detail:
+                lbl = tk.Label(card, text=detail, bg=cbg, fg=FG, font=self.f(12), anchor="w",
+                               justify="left", wraplength=max(100, width - extra))
+                lbl.pack(side="left", fill="x", expand=True, pady=6)
+                self.wrap_labels.append((lbl, extra))
+
+        self.canvas.yview_moveto(0)
+        last = self.idx >= len(turns) - 1
+        self.prev_btn.configure(state="normal" if self.idx > 0 else "disabled")
+        self.next_btn.configure(state="disabled" if last else "normal",
+                                text="Last turn \u2714" if last else "Next turn  \u25b6")
+
+    def _draw_bar(self, frac):
+        self.bar.delete("all")
+        self.update_idletasks()
+        w = self.bar.winfo_width()
+        if frac > 0:
+            self.bar.create_rectangle(0, 0, int(w * frac), 6, fill=ACCENT, width=0)
+
+    def btn_label(self, char, btn):
+        key = (char.upper(), btn.upper())
+        names = dict(CHAR_BTN_NAMES)
+        if self.rot:
+            names.update(self.rot.get("btn_names", {}))
+        return names.get(key) or BTN_NAMES.get(btn.upper(), btn)
+
+    def show_team(self):
+        if not self.rot:
+            return
+        if getattr(self, "team_win", None) and self.team_win.winfo_exists():
+            self.team_win.destroy()
+        win = self.team_win = tk.Toplevel(self)
+        win.title("Team — " + self.rot["title"])
+        win.configure(bg=BG)
+        win.geometry(self.cfg.get("team_geometry", "520x640"))
+        win.attributes("-topmost", self.on_top.get())
+        win.bind("<Escape>", lambda e: win.destroy())
+        win.bind("<t>", lambda e: win.destroy())
+        win.protocol("WM_DELETE_WINDOW", lambda: (self.cfg.__setitem__("team_geometry", win.geometry()),
+                                                  win.destroy()))
+
+        canvas = tk.Canvas(win, bg=BG, highlightthickness=0)
+        vsb = tk.Scrollbar(win, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+        body = tk.Frame(canvas, bg=BG)
+        body_win = canvas.create_window((0, 0), window=body, anchor="nw")
+        body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        wraps = []
+
+        def on_resize(e):
+            canvas.itemconfigure(body_win, width=e.width)
+            for lbl in wraps:
+                lbl.configure(wraplength=max(150, e.width - 50))
+        canvas.bind("<Configure>", on_resize)
+
+        def line(parent, label, value, fg=FG, italic=False):
+            row = tk.Frame(parent, bg=CARD)
+            row.pack(fill="x", padx=12, pady=1)
+            if label:
+                tk.Label(row, text=label, bg=CARD, fg=MUTED, font=self.f(10), width=9,
+                         anchor="w").pack(side="left", anchor="n")
+            lbl = tk.Label(row, text=value, bg=CARD, fg=fg, anchor="w", justify="left",
+                           font=self.f(11, slant="italic" if italic else "roman"), wraplength=380)
+            lbl.pack(side="left", fill="x", expand=True)
+            wraps.append(lbl)
+
+        units = self.rot.get("units") or []
+        personas = self.rot.get("personas") or []
+        has_wonder = any(u["name"].upper() == "WONDER" for u in units)
+
+        if not units and not personas:
+            if self.rot.get("team"):
+                for t in self.rot["team"]:
+                    lbl = tk.Label(body, text=t, bg=BG, fg=FG, font=self.f(11), anchor="w",
+                                   justify="left", wraplength=400)
+                    lbl.pack(fill="x", padx=4, pady=3)
+                    wraps.append(lbl)
+            else:
+                tk.Label(body, text="This rotation has no team info.", bg=BG, fg=MUTED,
+                         font=self.f(11)).pack(anchor="w", padx=4, pady=10)
+
+        def persona_block(parent):
+            tk.Label(parent, text="Personas", bg=CARD, fg=ACCENT, font=self.f(11, "bold"),
+                     anchor="w").pack(fill="x", padx=12, pady=(8, 2))
+            for p in personas:
+                prow = tk.Frame(parent, bg=PANEL)
+                prow.pack(fill="x", padx=12, pady=2)
+                top = tk.Frame(prow, bg=PANEL)
+                top.pack(fill="x", padx=8, pady=(5, 3))
+                tk.Label(top, text=p["name"], bg=PANEL, fg=FG, font=self.f(12, "bold")).pack(side="left")
+                for s in p["skills"]:
+                    tk.Label(top, text=s, bg="#334155", fg=FG, font=self.f(10), padx=6,
+                             pady=1).pack(side="left", padx=(6, 0))
+                if p["note"]:
+                    lbl = tk.Label(prow, text=p["note"], bg=PANEL, fg=MUTED, font=self.f(10, slant="italic"),
+                                   anchor="w", justify="left", wraplength=380)
+                    lbl.pack(fill="x", padx=8, pady=(0, 5))
+                    wraps.append(lbl)
+
+        for u in units:
+            card = tk.Frame(body, bg=CARD)
+            card.pack(fill="x", pady=4, padx=2)
+            head = tk.Frame(card, bg=CARD)
+            head.pack(fill="x", padx=12, pady=(8, 4))
+            tk.Label(head, text=u["name"].upper(), bg=CARD,
+                     fg=self.char_colors.get(u["name"].upper(), FG),
+                     font=self.f(15, "bold")).pack(side="left")
+            if u["tag"]:
+                tk.Label(head, text=u["tag"], bg="#4c3a66", fg="#e9d5ff", font=self.f(9, "bold"),
+                         padx=6).pack(side="left", padx=(8, 0))
+            lvl = "  ".join(x for x in (u["awareness"], u["rev"]) if x)
+            if lvl:
+                tk.Label(head, text=lvl, bg=CARD, fg=MUTED, font=self.f(11)).pack(side="left", padx=(10, 0))
+            if u["role"]:
+                tk.Label(head, text=u["role"], bg=CARD, fg=NOTE_FG,
+                         font=self.f(10, "bold")).pack(side="right")
+            if u["weapon"]:
+                line(card, "Weapon", u["weapon"])
+            if u["cards"]:
+                line(card, "Cards", "  ·  ".join(u["cards"]))
+            if u["companion"]:
+                line(card, "Companion", u["companion"])
+            if u["note"]:
+                line(card, "", u["note"], fg=NOTE_FG, italic=True)
+            if u["name"].upper() == "WONDER" and personas:
+                persona_block(card)
+            tk.Frame(card, bg=CARD, height=6).pack(fill="x")
+
+        if personas and not has_wonder:
+            card = tk.Frame(body, bg=CARD)
+            card.pack(fill="x", pady=4, padx=2)
+            persona_block(card)
+            tk.Frame(card, bg=CARD, height=6).pack(fill="x")
+
+    def show_info(self):
+        if not self.rot:
+            return
+        win = tk.Toplevel(self)
+        win.title(self.rot["title"])
+        win.configure(bg=BG)
+        win.geometry("560x560")
+        win.attributes("-topmost", self.on_top.get())
+        txt = tk.Text(win, bg=PANEL, fg=FG, font=self.f(11), wrap="word", relief="flat",
+                      padx=12, pady=10, insertbackground=FG)
+        txt.pack(fill="both", expand=True, padx=8, pady=8)
+        txt.tag_configure("h", font=self.f(13, "bold"), foreground=ACCENT, spacing1=8, spacing3=4)
+        txt.insert("end", self.rot["title"] + "\n", "h")
+        if self.rot["meta"]:
+            txt.insert("end", "\n".join(self.rot["meta"]) + "\n")
+        if self.rot["team"]:
+            txt.insert("end", "\nTeam\n", "h")
+            txt.insert("end", "\n".join(self.rot["team"]) + "\n")
+        if self.rot["notes"]:
+            txt.insert("end", "\nNotes & adjustments\n", "h")
+            txt.insert("end", self.rot["notes"] + "\n")
+        txt.configure(state="disabled")
+        self._btn(win, "Close", win.destroy).pack(pady=(0, 8))
+        win.bind("<Escape>", lambda e: win.destroy())
+
+    def on_close(self):
+        self.cfg["geometry"] = self.geometry()
+        save_cfg(self.cfg)
+        self.destroy()
+
+
+def main():
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            pass
+    start = sys.argv[1] if len(sys.argv) > 1 else None
+    App(start).mainloop()
+
+
+if __name__ == "__main__":
+    main()
