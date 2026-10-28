@@ -2,9 +2,27 @@
 
 A small Windows app for following long guild boss rotations turn by turn. Load a rotation, see exactly what each character does this turn, then press **Next turn**.
 
-## Building the .exe
+## Download
 
-You only need to do this once (and again whenever `rotation_tracker.py` is updated).
+Grab **`RotationTracker.exe`** from the [latest release](https://github.com/Xion0014/RotationTracker/releases/latest) and run it. No install or Python needed.
+
+## Updates
+
+The app checks for a new version each time it starts. When one is out, it asks whether to update; say yes and it downloads the new version, replaces itself and restarts. You can also check any time with the **Updates** button.
+
+If you say no, it won't ask again about that version, but the **Updates** button will still offer it.
+
+### Publishing a new version (for maintainers)
+
+1. Make your changes to `rotation_tracker.py`.
+2. Raise `APP_VERSION` near the top of the file (for example `"1.0.0"` → `"1.1.0"`).
+3. Commit and push to `main`. The commit message becomes the release notes users see.
+
+GitHub Actions then builds the exe and publishes the release (it takes a few minutes; watch the **Actions** tab). Pushes that don't change `APP_VERSION` don't create a release.
+
+## Building the .exe yourself
+
+Only needed if you want to build locally instead of using the releases.
 
 1. Install Python 3 from [python.org](https://www.python.org/downloads/).
    During setup, tick **"Add python.exe to PATH"**.
@@ -23,6 +41,7 @@ The exe runs on its own, so you can move it anywhere or share it. Python is only
 - The dropdown jumps to any turn; **Restart** goes back to the first.
 - **Team** (or `T`): every unit's awareness, weapon, cards and notes, plus Wonder's personas and skills.
 - **Info**: rotation details, notes and adjustments. It opens automatically when you load a new rotation.
+- **Updates** checks for a newer version.
 - **On top** keeps the window above the game. **A− / A+** change the text size.
 - If you close the app mid-fight, it reopens on the same turn.
 

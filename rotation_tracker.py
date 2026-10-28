@@ -10,11 +10,20 @@ You can also drag a rotation file onto the .exe to open it directly.
 import json
 import os
 import re
+import subprocess
 import sys
+import threading
+import urllib.request
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 APP_NAME = "Rotation Tracker"
+
+# Bump this and push to main: GitHub Actions builds the exe and publishes a release,
+# and everyone's app offers the update.
+APP_VERSION = "1.0.0"
+GITHUB_REPO = "Xion0014/RotationTracker"
+EXE_ASSET = "RotationTracker.exe"
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".rotation_tracker.json")
 
 # ----------------------------------------------------------------------------
@@ -578,6 +587,90 @@ def save_cfg(cfg):
 
 
 # ----------------------------------------------------------------------------
+# Updates (GitHub Releases)
+# ----------------------------------------------------------------------------
+def _ver_tuple(v):
+    return tuple(int(x) for x in re.findall(r"\d+", str(v))[:4]) or (0,)
+
+
+def _http_get(url, timeout=15):
+    req = urllib.request.Request(url, headers={"User-Agent": f"RotationTracker/{APP_VERSION}",
+                                               "Accept": "application/vnd.github+json"})
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def fetch_latest_release():
+    """Returns {version, tag, notes, exe_url, page} for the newest release."""
+    with _http_get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest") as r:
+        data = json.loads(r.read().decode("utf-8"))
+    exe_url = next((a["browser_download_url"] for a in data.get("assets", [])
+                    if a.get("name", "").lower() == EXE_ASSET.lower()), None)
+    tag = data.get("tag_name", "")
+    return {"version": tag.lstrip("vV"), "tag": tag, "notes": (data.get("body") or "").strip(),
+            "exe_url": exe_url, "page": data.get("html_url", "")}
+
+
+def is_frozen():
+    return bool(getattr(sys, "frozen", False))
+
+
+def install_update(release, progress=None):
+    """Download the new version next to the current one and swap it in.
+    Returns the command that starts the new version."""
+    if is_frozen():
+        target = sys.executable
+        url = release["exe_url"]
+        if not url:
+            raise RuntimeError("This release has no RotationTracker.exe attached yet.")
+    else:
+        target = os.path.abspath(__file__)
+        url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{release['tag']}/rotation_tracker.py"
+
+    tmp = target + ".new"
+    with _http_get(url, timeout=60) as r, open(tmp, "wb") as f:
+        total = int(r.headers.get("Content-Length") or 0)
+        done = 0
+        while True:
+            chunk = r.read(65536)
+            if not chunk:
+                break
+            f.write(chunk)
+            done += len(chunk)
+            if progress:
+                progress(done, total)
+
+    # Sanity-check the download before replacing anything
+    with open(tmp, "rb") as f:
+        head = f.read()
+    if is_frozen():
+        if not head.startswith(b"MZ") or len(head) < 1_000_000:
+            os.remove(tmp)
+            raise RuntimeError("The downloaded file doesn't look like a valid exe.")
+    else:
+        compile(head.decode("utf-8"), target, "exec")
+
+    # A running exe can't be overwritten on Windows, but it can be renamed.
+    old = target + ".old"
+    try:
+        if os.path.exists(old):
+            os.remove(old)
+    except OSError:
+        pass
+    os.replace(target, old)
+    os.replace(tmp, target)
+    return [target] if is_frozen() else [sys.executable, target]
+
+
+def cleanup_old_version():
+    path = (sys.executable if is_frozen() else os.path.abspath(__file__)) + ".old"
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+
+# ----------------------------------------------------------------------------
 # GUI
 # ----------------------------------------------------------------------------
 class App(tk.Tk):
@@ -602,11 +695,18 @@ class App(tk.Tk):
         self._bind_keys()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+        self.title(f"{APP_NAME} v{APP_VERSION}")
         target = start_file or self.cfg.get("last_file")
         if target and os.path.exists(target):
             self.open_file(target, resume=True)
         else:
             self.render()
+
+        # Remove the previous version left behind by an update, then look for a new one
+        cleanup_old_version()
+        self.after(4000, cleanup_old_version)
+        if self.cfg.get("auto_update_check", True):
+            self.after(1500, lambda: self.check_updates(manual=False))
 
     # ---- fonts ----
     def f(self, size, weight="normal", slant="roman"):
@@ -642,6 +742,8 @@ class App(tk.Tk):
         self._btn(self.toolbar, "Team", self.show_team).pack(side="left", padx=(6, 0))
         self._btn(self.toolbar, "Info", self.show_info).pack(side="left", padx=(6, 0))
         self._btn(self.toolbar, "Restart", self.restart).pack(side="left", padx=(6, 0))
+        self._btn(self.toolbar, "Updates", lambda: self.check_updates(manual=True)).pack(
+            side="left", padx=(6, 0))
         tk.Checkbutton(self.toolbar, text="On top", variable=self.on_top,
                        command=self.toggle_top, bg=BG, fg=FG, selectcolor=PANEL,
                        activebackground=BG, activeforeground=FG,
@@ -760,7 +862,7 @@ class App(tk.Tk):
         self.idx = positions.get(self.path, 0) if resume else 0
         self.idx = max(0, min(self.idx, len(rot["turns"]) - 1))
         self.cfg["last_file"] = self.path
-        self.title(f"{rot['title']} \u2014 {APP_NAME}")
+        self.title(f"{rot['title']} \u2014 {APP_NAME} v{APP_VERSION}")
         self.jump.configure(values=[f"{i + 1}. {t['name']}" for i, t in enumerate(rot["turns"])])
         self.render()
         if not resume and rot.get("notes"):
@@ -1026,6 +1128,7 @@ class App(tk.Tk):
         txt.pack(fill="both", expand=True, padx=8, pady=8)
         txt.tag_configure("h", font=self.f(13, "bold"), foreground=ACCENT, spacing1=8, spacing3=4)
         txt.insert("end", self.rot["title"] + "\n", "h")
+        txt.insert("end", f"{APP_NAME} v{APP_VERSION}\n")
         if self.rot["meta"]:
             txt.insert("end", "\n".join(self.rot["meta"]) + "\n")
         if self.rot["team"]:
@@ -1037,6 +1140,109 @@ class App(tk.Tk):
         txt.configure(state="disabled")
         self._btn(win, "Close", win.destroy).pack(pady=(0, 8))
         win.bind("<Escape>", lambda e: win.destroy())
+
+    # ---- updates ----
+    def _in_background(self, work, done):
+        """Run work() in a thread, then done(result, error) on the UI thread."""
+        box = {}
+
+        def run():
+            try:
+                box["result"] = work()
+            except Exception as e:
+                box["error"] = e
+            box["finished"] = True
+
+        def poll():
+            if box.get("finished"):
+                done(box.get("result"), box.get("error"))
+            else:
+                self.after(100, poll)
+
+        threading.Thread(target=run, daemon=True).start()
+        poll()
+
+    def check_updates(self, manual=False):
+        if getattr(self, "_checking", False):
+            return
+        self._checking = True
+
+        def done(rel, err):
+            self._checking = False
+            if err:
+                if manual:
+                    messagebox.showerror(APP_NAME, f"Couldn't check for updates:\n\n{err}")
+                return
+            newer = _ver_tuple(rel["version"]) > _ver_tuple(APP_VERSION)
+            if not newer:
+                if manual:
+                    messagebox.showinfo(APP_NAME, f"You're on the latest version (v{APP_VERSION}).")
+                return
+            if not manual and self.cfg.get("skip_version") == rel["version"]:
+                return
+            self.prompt_update(rel, manual)
+
+        self._in_background(fetch_latest_release, done)
+
+    def prompt_update(self, rel, manual):
+        notes = rel["notes"]
+        if len(notes) > 600:
+            notes = notes[:600].rstrip() + "…"
+        msg = f"Version {rel['version']} is available (you have {APP_VERSION})."
+        if notes:
+            msg += f"\n\nWhat's new:\n{notes}"
+        msg += "\n\nUpdate now? The app will restart."
+        if is_frozen() and not rel["exe_url"]:
+            messagebox.showinfo(APP_NAME, f"Version {rel['version']} is being prepared. "
+                                          "Try again in a few minutes.")
+            return
+        ans = messagebox.askyesno(APP_NAME, msg, parent=self)
+        if ans:
+            self.do_update(rel)
+        elif not manual:
+            self.cfg["skip_version"] = rel["version"]   # don't nag again for this version
+            save_cfg(self.cfg)
+
+    def do_update(self, rel):
+        win = tk.Toplevel(self)
+        win.title("Updating…")
+        win.configure(bg=BG)
+        win.resizable(False, False)
+        win.attributes("-topmost", True)
+        win.transient(self)
+        lbl = tk.Label(win, text=f"Downloading v{rel['version']}…", bg=BG, fg=FG,
+                       font=self.f(11), padx=30, pady=20)
+        lbl.pack()
+        state = {"text": lbl["text"]}
+
+        def progress(done, total):
+            state["text"] = (f"Downloading v{rel['version']}…  {done * 100 // total}%"
+                             if total else f"Downloading v{rel['version']}…  {done // 1024} KB")
+
+        def tick():
+            if win.winfo_exists():
+                lbl.configure(text=state["text"])
+                win.after(150, tick)
+        tick()
+
+        def done(cmd, err):
+            if err:
+                win.destroy()
+                messagebox.showerror(APP_NAME, f"The update failed, nothing was changed:\n\n{err}\n\n"
+                                               f"You can download it manually from:\n{rel['page']}")
+                return
+            self.cfg["geometry"] = self.geometry()
+            self.cfg.pop("skip_version", None)
+            save_cfg(self.cfg)
+            try:
+                subprocess.Popen(cmd + ([self.path] if self.path else []),
+                                 cwd=os.path.dirname(cmd[-1]))
+            except Exception as e:
+                messagebox.showinfo(APP_NAME, f"Updated to v{rel['version']}. Please start the app "
+                                              f"again.\n\n({e})")
+            self.destroy()
+
+        self._in_background(lambda: install_update(rel, progress), done)
 
     def on_close(self):
         self.cfg["geometry"] = self.geometry()
