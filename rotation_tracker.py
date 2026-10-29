@@ -7,12 +7,65 @@ and press Next (or Space / Right arrow) to move on.
 
 You can also drag a rotation file onto the .exe to open it directly.
 """
-import json
 import os
-import re
 import subprocess
 import sys
-import threading
+
+
+# ----------------------------------------------------------------------------
+# Clean start for the packaged exe. This runs before anything else.
+#
+# A PyInstaller exe unpacks itself into a temporary _MEIxxxx folder. If one copy
+# of the exe starts another copy at the same path (which the updater does), the
+# new copy inherits the old one's settings and reuses its temp folder, which
+# Windows deletes as soon as the old copy closes. Tcl/Tk then fails with
+# "couldn't read file .../_tcl_data/auto.tcl".
+# ----------------------------------------------------------------------------
+def clean_child_env():
+    """Environment for starting a fresh, independent copy of the app."""
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith("_PYI_") and k not in ("_MEIPASS2", "TCL_LIBRARY", "TK_LIBRARY")}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
+
+
+def _restart_clean_if_needed():
+    if not getattr(sys, "frozen", False) or os.environ.get("RT_CLEAN_START"):
+        return
+    home = getattr(sys, "_MEIPASS", "")
+    marker = os.path.join(home, ".rt_owner")
+    reused = False
+    try:
+        # Our own fresh temp folder never has another process's marker in it
+        with open(marker, encoding="ascii") as f:
+            reused = f.read().strip() != str(os.getpid())
+    except OSError:
+        pass
+    for var, probe in (("TCL_LIBRARY", "init.tcl"), ("TK_LIBRARY", "tk.tcl")):
+        d = os.environ.get(var)
+        if d and not os.path.isfile(os.path.join(d, probe)):
+            reused = True        # the temp folder we were handed is already being deleted
+    if reused:
+        env = clean_child_env()
+        env["RT_CLEAN_START"] = "1"
+        try:
+            subprocess.Popen([sys.executable] + sys.argv[1:], env=env,
+                             cwd=os.path.dirname(sys.executable))
+            os._exit(0)
+        except OSError:
+            pass
+    try:
+        with open(marker, "w", encoding="ascii") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+
+
+_restart_clean_if_needed()
+
+import json  # noqa: E402
+import re  # noqa: E402
+import threading  # noqa: E402
 import urllib.request
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -21,7 +74,7 @@ APP_NAME = "Rotation Tracker"
 
 # Bump this and push to main: GitHub Actions builds the exe and publishes a release,
 # and everyone's app offers the update.
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 GITHUB_REPO = "Xion0014/RotationTracker"
 EXE_ASSET = "RotationTracker.exe"
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".rotation_tracker.json")
@@ -1363,8 +1416,9 @@ class App(tk.Tk):
             self.cfg.pop("skip_version", None)
             save_cfg(self.cfg)
             try:
+                # Clean environment so the new version unpacks into its own temp folder
                 subprocess.Popen(cmd + ([self.path] if self.path else []),
-                                 cwd=os.path.dirname(cmd[-1]))
+                                 cwd=os.path.dirname(cmd[-1]), env=clean_child_env())
             except Exception as e:
                 messagebox.showinfo(APP_NAME, f"Updated to v{rel['version']}. Please start the app "
                                               f"again.\n\n({e})")
