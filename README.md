@@ -81,6 +81,13 @@ B1 (82) Miku S3, Twins S2, Dio Cohesion, Kotone GFBx2, Dio HL, S2, S2
 - Commas separate actions; `+` splits a combo into steps.
 - Persona names (or short forms like `Dio`) count as Wonder.
 - A bare skill like `S2` goes to the last character who acted (skipping Wonder's HL).
+- Miku's songs count as Miku: `Heaven 2` is her S2 with Heaven, `Fire S1` her S1 with Play-With-Fire.
+- `F/I HL` and `P/N HL` count as Twins.
+- `Action 19 - T4: ...` works as well as `T4 (19) ...`.
+- A `-Break-` line before plain `T8`, `T9` turns marks them as Break 1, Break 2, and so on.
+- `Weapon - Persona (skills), Persona (skills)` sets Wonder's weapon and personas, `Borrow Xion's Puppet` adds a borrowed unit, and `Twins > Wonder > Kotone > Puppet` records the turn order.
+
+See the [`examples`](examples) folder for complete rotations in each format.
 
 ### Structured text
 

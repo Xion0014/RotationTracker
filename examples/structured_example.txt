@@ -1,0 +1,64 @@
+// Text rotation format for Rotation Tracker
+// Lines starting with // are ignored.
+//
+// Before the first turn you can set:  title:  boss:  score:  notes:
+//
+// Team (shown with the Team button):
+//   unit: NAME awareness R# | weapon: ... | cards: Card1 / Card2 | role: ... | any note
+//         add "| elucidator" or "| backup" to tag a unit
+//   persona: Name - Skill1, Skill2 (optional note)
+//   button: CHARACTER Btn = Name shown on the badge     e.g.  button: KOTONE Ast = Go for Broke
+// Start a turn with:   TURN 1   or   Break 2   or   [Any name you like]
+// Actions:             CHARACTER: BUTTON extra text
+//                      (BUTTON is one of S1 S2 S3 HL Gd Ast Atk Item HP Skip; otherwise it's all treated as text)
+// Turn note:           note: something    or    > something
+// Alternative action:  (alt) BERRY: HL
+// Any other line inside a turn shows up as a highlighted warning.
+
+title: Hachiman A6 Berry, Kotone + Twins
+boss: Hachiman
+score: 2.5B
+
+unit: TWINS A1 R0 | cards: Creation / Reconciliation | role: Strategist | Departure Control could be better
+unit: WONDER DGR R3 | weapon: Cursed Ties | Preferably R6
+unit: KOTONE A1 R0 | cards: Nativity / Strife
+unit: BERRY A6 R6 | cards: Perseverance / Sorrow | Eupha Borrow
+unit: MIKU A1 R0 | cards: Hope / Labor | elucidator
+persona: Dionysus - Rebellion, Tarukaja
+persona: Janosik - Rakunda
+persona: Vasuki - Mediarama, Matarukaja (healing and sp recovery passives)
+notes: Heal with Wonder as needed. Check adjustments before starting!
+
+TURN 1
+TWINS: Gd
+WONDER: Gd
+KOTONE: Gd
+BERRY: S1 Skulls
+note: If you accidentally kill Hachiman here, move Kotone's Arcana Link and back
+
+TURN 2
+HP: ON
+MIKU: S2 Heaven
+TWINS: Gd
+BERRY: HL
+WONDER: Gd
+KOTONE: Gd
+BERRY: S3
+> Action 6
+
+TURN 3
+MIKU: S2 Spring Storm
+TWINS: Gd
+WONDER: Vasuki - Mediarama
+KOTONE: Gd
+BERRY: Gd
+
+Break 1
+MIKU: S3
+TWINS: S2
+WONDER: HL Dionysus
+WONDER: Dionysus - Rebellion
+KOTONE: S1
+BERRY: S3
+(alt) BERRY: HL
+Really don't forget to turn HP off!

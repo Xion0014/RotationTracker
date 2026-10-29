@@ -1,0 +1,900 @@
+{
+  "setup": {
+    "rotationName": "DOD Hachiman A6 Berry, Kotone + Twins (Return of the long)",
+    "tier": "",
+    "boss": "HACHIMAN",
+    "type": "DOD",
+    "patch": "4.11",
+    "score": "2.5B",
+    "notes": "Another long one... but it's worth it I promise. That being said, make sure you **PAY ATTENTION TO THE ADJUSTMENTS** so you don't have to start over\n\n*Heal with Wonder as needed between Mediarama and other healing items like Recov-R L and Takemedic-All V. What is listed in the rotation is suggestions based on what I had to do* \n\n**ADJUSTMENTS**\nA2+ Miku: \nBreak 1: Dion Tarukaja\nBreak 2: Vasuki Mataru\nBreak 3: Dion Rebellion\nBreak 4: Dion Tarukaja\n\nA6 Kotone: Double GFB on Break 2 - S1 > S3 > S2 > (Berry HL) S2 > S1\n\nA0 Kotone: Kotone HL Break 2 after her S1. Berry HL instead of Twins HL on Break 3\n\nA6 Twins: Button on Turn 1, Turn 18, and Break 3",
+    "credits": "Gibus",
+    "side": "Strong",
+    "breaks": 4
+  },
+  "units": [
+    {
+      "name": "TWINS",
+      "awareness": "A1",
+      "rev": "R0",
+      "gear": "",
+      "space": "Creation",
+      "sunsky": "Reconciliation",
+      "role": "Strategist",
+      "companion": "",
+      "note": "Departure Control could be better, hard to tell from damage variance. But either is fine"
+    },
+    {
+      "name": "WONDER",
+      "awareness": "DGR",
+      "rev": "R3",
+      "gear": "Cursed Ties",
+      "space": "",
+      "sunsky": "",
+      "role": "",
+      "companion": "",
+      "note": "Preferably R6"
+    },
+    {
+      "name": "KOTONE",
+      "awareness": "A1",
+      "rev": "R0",
+      "gear": "",
+      "space": "Nativity",
+      "sunsky": "Strife",
+      "role": "",
+      "companion": "",
+      "note": ""
+    },
+    {
+      "name": "BERRY",
+      "awareness": "A6",
+      "rev": "R6",
+      "gear": "",
+      "space": "Perseverance",
+      "sunsky": "Sorrow",
+      "role": "",
+      "companion": "",
+      "note": "Eupha Borrow"
+    }
+  ],
+  "elucidator": {
+    "name": "MIKU",
+    "awareness": "A1",
+    "rev": "R0",
+    "gear": "",
+    "space": "Hope",
+    "sunsky": "Labor",
+    "role": "",
+    "companion": "",
+    "note": "I have A2, main rotation is written with A1 in mind"
+  },
+  "personas": [
+    {
+      "name": "Dionysus",
+      "skills": [
+        "Rebellion",
+        "Tarukaja"
+      ],
+      "note": ""
+    },
+    {
+      "name": "Janosik",
+      "skills": [
+        "Rakunda",
+        ""
+      ],
+      "note": ""
+    },
+    {
+      "name": "Vasuki",
+      "skills": [
+        "Mediarama",
+        "Matarukaja"
+      ],
+      "note": "healing and sp recovery passives"
+    }
+  ],
+  "teamNotes": "",
+  "rotationView": "horizontal",
+  "turns": [
+    {
+      "name": "TURN 1",
+      "actions": [
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "",
+          "hl": false,
+          "text": "",
+          "skill": "",
+          "btn": "Gd"
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "S1",
+          "text": "Skulls"
+        }
+      ],
+      "note": "If you accidentally kill Hachiman here, try temporarily moving Kotone's Arcana Link to another character, then back to Berry next turn"
+    },
+    {
+      "name": "TURN 2",
+      "actions": [
+        {
+          "char": "",
+          "hp": "ON",
+          "btn": "",
+          "text": ""
+        },
+        {
+          "char": "MIKU",
+          "btn": "S2",
+          "text": "",
+          "song": "Heaven"
+        },
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "HL",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "",
+          "hl": false,
+          "text": "",
+          "skill": "",
+          "btn": "Gd"
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": ""
+        }
+      ],
+      "note": "Action 6"
+    },
+    {
+      "name": "TURN 3",
+      "actions": [
+        {
+          "char": "MIKU",
+          "btn": "S2",
+          "text": "",
+          "song": "Spring Storm"
+        },
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Vasuki",
+          "hl": false,
+          "text": "",
+          "skill": "Mediarama",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "Gd",
+          "text": ""
+        }
+      ],
+      "note": "Action 11"
+    },
+    {
+      "name": "TURN 4",
+      "actions": [
+        {
+          "char": "MIKU",
+          "btn": "S1",
+          "text": "",
+          "song": "Play-With-Fire"
+        },
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "",
+          "hl": false,
+          "text": "Recover-R Berry",
+          "skill": "",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": ""
+        }
+      ],
+      "note": "Action 16"
+    },
+    {
+      "name": "TURN 5",
+      "actions": [
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "",
+          "hl": false,
+          "text": "",
+          "skill": "",
+          "btn": "Gd"
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "Gd",
+          "text": ""
+        }
+      ],
+      "note": "Action 21"
+    },
+    {
+      "name": "TURN 6",
+      "actions": [
+        {
+          "char": "BERRY",
+          "btn": "HL",
+          "text": ""
+        },
+        {
+          "char": "MIKU",
+          "btn": "S3",
+          "text": ""
+        },
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "",
+          "hl": false,
+          "text": "",
+          "skill": "",
+          "btn": "Gd"
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "HL",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "Gd",
+          "text": ""
+        }
+      ],
+      "note": "Action 26 (Miku Turn 1)"
+    },
+    {
+      "name": "TURN 7",
+      "actions": [
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Vasuki",
+          "hl": false,
+          "text": "",
+          "skill": "Mediarama",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "Gd",
+          "text": ""
+        }
+      ],
+      "note": "Action 26 still (Miku Turn 2)"
+    },
+    {
+      "name": "TURN 8",
+      "actions": [
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "",
+          "hl": false,
+          "text": "",
+          "skill": "",
+          "btn": "Gd"
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "Gd",
+          "text": ""
+        }
+      ],
+      "note": "Action 27"
+    },
+    {
+      "name": "TURN 9",
+      "actions": [
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Vasuki",
+          "hl": false,
+          "text": "",
+          "skill": "Mediarama",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": ""
+        }
+      ],
+      "note": "Action 32"
+    },
+    {
+      "name": "TURN 10",
+      "actions": [
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "",
+          "hl": false,
+          "text": "",
+          "skill": "",
+          "btn": "Gd"
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "Gd",
+          "text": ""
+        }
+      ],
+      "note": "Action 37"
+    },
+    {
+      "name": "TURN 11",
+      "actions": [
+        {
+          "char": "BERRY",
+          "btn": "HL",
+          "text": ""
+        },
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Vasuki",
+          "hl": false,
+          "text": "",
+          "skill": "Mediarama",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "Gd",
+          "text": ""
+        }
+      ],
+      "note": "Action 42"
+    },
+    {
+      "name": "TURN 12",
+      "actions": [
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Vasuki",
+          "hl": false,
+          "text": "",
+          "skill": "Mediarama",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": ""
+        }
+      ],
+      "note": "Action 47"
+    },
+    {
+      "name": "TURN 13",
+      "actions": [
+        {
+          "char": "TWINS",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "",
+          "hl": false,
+          "text": "Takemedic-All V",
+          "skill": "",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": ""
+        }
+      ],
+      "note": "Action 52"
+    },
+    {
+      "name": "TURN 14",
+      "actions": [
+        {
+          "char": "TWINS",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Vasuki",
+          "hl": false,
+          "text": "",
+          "skill": "Mediarama",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "Gd",
+          "text": ""
+        }
+      ],
+      "note": "Action 57"
+    },
+    {
+      "name": "TURN 15",
+      "actions": [
+        {
+          "char": "BERRY",
+          "btn": "HL",
+          "text": ""
+        },
+        {
+          "char": "TWINS",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Vasuki",
+          "hl": false,
+          "text": "",
+          "skill": "Mediarama",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Gd",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": ""
+        }
+      ],
+      "note": "Action 62"
+    },
+    {
+      "name": "TURN 16",
+      "actions": [
+        {
+          "char": "MIKU",
+          "btn": "S1",
+          "text": "",
+          "song": "Play-With-Fire"
+        },
+        {
+          "char": "TWINS",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "",
+          "hl": false,
+          "text": "",
+          "skill": "",
+          "btn": "Gd"
+        },
+        {
+          "char": "KOTONE",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "Gd",
+          "text": ""
+        }
+      ],
+      "note": "Action 67"
+    },
+    {
+      "name": "TURN 17",
+      "actions": [
+        {
+          "char": "MIKU",
+          "btn": "S1",
+          "text": "",
+          "song": "Heaven"
+        },
+        {
+          "char": "TWINS",
+          "btn": "S2",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Vasuki",
+          "hl": false,
+          "text": "Spiral",
+          "skill": "Venomous Spiral",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "Gd",
+          "text": ""
+        }
+      ],
+      "note": "Action 72"
+    },
+    {
+      "name": "TURN 18",
+      "actions": [
+        {
+          "char": "MIKU",
+          "btn": "S2",
+          "text": "",
+          "song": "Spring Storm"
+        },
+        {
+          "char": "TWINS",
+          "btn": "HL",
+          "text": "Fire/Ice"
+        },
+        {
+          "char": "TWINS",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Janosik",
+          "hl": false,
+          "text": "",
+          "skill": "Rakunda",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "",
+          "hp": "OFF",
+          "btn": "",
+          "text": ""
+        },
+        {
+          "char": "",
+          "btn": "",
+          "text": "Really please dont forget to turn it off after all of that"
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": ""
+        }
+      ],
+      "note": "Action 77"
+    },
+    {
+      "name": "Break 1",
+      "actions": [
+        {
+          "char": "MIKU",
+          "btn": "S3",
+          "text": ""
+        },
+        {
+          "char": "TWINS",
+          "btn": "S2",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Dionysus",
+          "hl": true,
+          "text": "",
+          "skill": "",
+          "btn": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Dionysus",
+          "hl": false,
+          "text": "",
+          "skill": "Rebellion",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": ""
+        }
+      ],
+      "note": "Miku Turn 1"
+    },
+    {
+      "name": "Break 2",
+      "actions": [
+        {
+          "char": "TWINS",
+          "btn": "HL",
+          "text": "Fire/Ice"
+        },
+        {
+          "char": "TWINS",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Dionysus",
+          "hl": false,
+          "text": "",
+          "skill": "Tarukaja",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "Ast",
+          "text": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "S3",
+          "text": "(Twins)"
+        },
+        {
+          "char": "BERRY",
+          "btn": "HL",
+          "text": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "S2",
+          "text": ""
+        },
+        {
+          "char": "BERRY",
+          "btn": "HL",
+          "text": "",
+          "alt": true
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": "",
+          "alt": true
+        }
+      ],
+      "note": "Miku Turn 2"
+    },
+    {
+      "name": "Break 3",
+      "actions": [
+        {
+          "char": "MIKU",
+          "btn": "S1",
+          "text": "",
+          "song": "Play-With-Fire"
+        },
+        {
+          "char": "TWINS",
+          "btn": "S2",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Vasuki",
+          "hl": false,
+          "text": "",
+          "skill": "Matarukaja",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "",
+          "text": "sick"
+        },
+        {
+          "char": "TWINS",
+          "btn": "HL",
+          "text": "P/N"
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": ""
+        }
+      ],
+      "note": ""
+    },
+    {
+      "name": "Break 4",
+      "actions": [
+        {
+          "char": "MIKU",
+          "btn": "S1",
+          "text": "",
+          "song": "Spring Storm"
+        },
+        {
+          "char": "TWINS",
+          "btn": "S1",
+          "text": ""
+        },
+        {
+          "char": "WONDER",
+          "persona": "Dionysus",
+          "hl": false,
+          "text": "",
+          "skill": "Rebellion",
+          "btn": ""
+        },
+        {
+          "char": "KOTONE",
+          "btn": "",
+          "text": "sick"
+        },
+        {
+          "char": "BERRY",
+          "btn": "S3",
+          "text": ""
+        }
+      ],
+      "note": ""
+    }
+  ],
+  "backup": {
+    "name": "",
+    "awareness": "",
+    "rev": "",
+    "gear": "",
+    "space": "",
+    "sunsky": "",
+    "role": "",
+    "companion": "",
+    "note": ""
+  }
+}

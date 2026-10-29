@@ -1,0 +1,27 @@
+Puppet a6 brr v2 - Credit: ARCTO
+
+Ice Age - Shark (damage passives), Dion (UT + Cohesion), Jiko (Taru + Mataru)
+Twins - Trust + Power - F/I + P/N
+Kotone - Nativity + Strife
+Miku - Integrity + Labor - don't need any Crit Rate or Pierce Rate, just Dmg Mult and Crit Mult
+
+Borrow Xion's Puppet
+
+Twins > Wonder > Kotone > SPuppet
+
+T1: (Twins Auto S3 must hit an add) Twins Guard, HP Lock, Wonder Guard, Kotone Guard, Puppet S3, Guard
+T2: Twins Guard, Wonder Guard, Kotone Guard, Puppet Guard
+T3: Heaven 2, Twins S1 an add, Dio Cohesion Puppet, Kotone Takemedic V All, Puppet S3 - (4)
+Action 19 - T4: Heaven 2, Puppet HL, Twins S2, Jiko Matarukaja, Kotone S1 Puppet, Puppet S3 + S1 (2)
+Action 26 - T5: Heaven 2, Twins S1 the boss, Dio UT Puppet, P/N HL, Kotone S1 Puppet, Puppet S3 (1)
+T6: Spring 2, Twins S2, Jiko Tarukaja Puppet, Kotone S3 Twins, Puppet S3 + Reso-Up Self
+T7: Fire 2, F/I HL, Twins Button + S1 boss, Dio Cohesion Puppet, Kotone S1 Puppet, HP Lock Off, Puppet S3 (0)
+
+-Break-
+
+T8: Miku S3, Twins S2, Jiko HL, Shark Sig, Kotone GFB x 2, Kotone S2, S3 Twins, Shark HL, S2, S1, S2, Puppet S2
+T9: Twins P/N HL, Twins Reso-Up Puppet, Dio UT Puppet, Kotone Sick, Puppet HL, Puppet S2
+T10: Spring 1, Twins S1, Dio Cohesion Puppet, Kotone Sick, Puppet S2
+T11: Fire S1, F/I HL, Twins Button + S2, Jiko Taru, Kotone S3 Twins, Puppet S2 
+
+

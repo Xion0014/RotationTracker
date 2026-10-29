@@ -21,7 +21,7 @@ APP_NAME = "Rotation Tracker"
 
 # Bump this and push to main: GitHub Actions builds the exe and publishes a release,
 # and everyone's app offers the update.
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 GITHUB_REPO = "Xion0014/RotationTracker"
 EXE_ASSET = "RotationTracker.exe"
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".rotation_tracker.json")
@@ -264,7 +264,7 @@ HEADER_RE = re.compile(
     r"|(?P<t>(?:turn|break|phase|wave|round)\s*[\w.\-]*)\s*:?)\s*$",
     re.I,
 )
-META_RE = re.compile(r"^\s*(title|name|boss|mode|type|patch|score|credits|by|team|unit|persona|button|notes?)"
+META_RE = re.compile(r"^\s*(title|name|boss|mode|type|patch|score|credits?|by|team|unit|persona|button|notes?)"
                      r"\s*[:=]\s*(.*)$", re.I)
 
 
@@ -311,16 +311,28 @@ def _text_persona(val):
 
 # ---- Shorthand format:  "T5 (21) Miku S1, Guard, Vasuki Heal, Berry S3"  /  "B2 ..." ----
 COMPACT_RE = re.compile(
-    r"^\s*(?P<kind>turn|t|break|b)\s*(?P<nums>\d+(?:\s*[-–]\s*\d+)*)\s*"
+    r"^\s*(?:action\s*(?P<act2>\d+)\s*[-:–]?\s*)?"               # optional "Action 19 - " prefix
+    r"(?P<kind>turn|t|break|b)\s*(?P<nums>\d+(?:\s*[-–]\s*\d+)*)\s*"
     r"(?:\((?P<act>\d+)\))?\s*[:.\-]?\s*(?P<rest>.*?)\s*$",
     re.I,
 )
-SHORT_UNIT_RE = re.compile(r"^\s*([A-Za-z][\w.]*(?:\s[A-Za-z][\w.]*)?)\s+-\s+(\S.*/.*\S)\s*$")
-SHORT_PERSONAS_RE = re.compile(r"^\s*(?:wonder(?:'s)?\s+)?personas?\s*:\s*(.+)$", re.I)
+# "Berry - Perseverance/Sorrow"  or  "Twins - Trust + Power - F/I + P/N"
+SHORT_UNIT_RE = re.compile(r"^\s*([A-Za-z][\w.']*(?:\s[A-Za-z][\w.']*){0,2})\s+-\s+(\S.*\S)\s*$")
+SHORT_PERSONAS_RE = re.compile(r"^\s*(?:wonder(?:'s)?\s+personas?|personas)\s*:\s*(.+)$", re.I)
+BORROW_RE = re.compile(r"^\s*borrow(?:ed)?\s+(?:(\S+?)'s\s+)?([A-Za-z][\w.]*)\s*(.*)$", re.I)
+DIVIDER_RE = re.compile(r"^\s*[-=*~_#\s]*\s*(break|breaks|phase\s*2|overdrive)\s*[-=*~_#\s]*$", re.I)
 BTN_TOKEN_RE = re.compile(r"^(S[123]|HL|GUARD|GD|AST|GFB|BUTTON)(?:X(\d+))?$")
 BTN_CANON = {"GUARD": "Gd", "GD": "Gd", "AST": "Ast", "GFB": "Ast", "BUTTON": "Button"}
 SKILL_BTNS = {"S1", "S2", "S3", "HL", "Ast", "Button"}
 EVERYONE = {"EVERYONE", "EVERYBODY", "ALL", "TEAM", "OTHERS"}
+
+# Miku's songs: "Heaven 2" / "Miku Fire S1" -> MIKU, S2/S1, ♪ song
+MIKU_SONGS = {"HEAVEN": "Heaven", "SPRING": "Spring Storm", "FIRE": "Play-With-Fire",
+              "PLAYWITHFIRE": "Play-With-Fire"}
+# Twins' highlight elements: "F/I HL" / "P/N HL" -> TWINS
+TWINS_ELEMENTS = {"F/I", "P/N", "FIRE/ICE", "PSY/NUKE"}
+# Words that never start a character name when guessing characters from the turn lines
+NOT_CHARS = {"HP", "GUARD", "GD", "OR", "AND", "THEN", "SKIP", "AUTO"}
 
 
 def split_top(s, sep):
@@ -341,12 +353,30 @@ def split_top(s, sep):
 
 
 def _short_personas(val):
+    """'Vasuki (Media, Sukukaja), Dion (UT + Cohesion), Shark (damage passives)'"""
     out = []
     for part in split_top(val, ","):
         m = re.match(r"^\s*([^(]+?)\s*(?:\((.*)\))?\s*$", part)
-        if m:
-            out.append(_persona(m.group(1), split_top(m.group(2) or "", ","), ""))
+        if not m:
+            continue
+        inner = (m.group(2) or "").strip()
+        skills = [s.strip() for s in re.split(r"\s*[,+]\s*", inner) if s.strip()]
+        note = ""
+        # "(damage passives)" is a description, not a list of skills
+        if len(skills) == 1 and " " in skills[0] and skills[0][:1].islower():
+            note, skills = skills[0], []
+        out.append(_persona(m.group(1), skills, note))
     return out
+
+
+def _looks_like_persona_list(val):
+    parts = split_top(val, ",")
+    return len(parts) >= 2 and all(re.match(r"^[A-Za-z][\w.\- ]*\(.*\)$", p) for p in parts)
+
+
+def _blank_unit(name):
+    return {"name": name, "tag": "", "awareness": "", "rev": "", "weapon": "", "cards": [],
+            "role": "", "companion": "", "note": ""}
 
 
 def _turn_numbers(nums):
@@ -390,18 +420,33 @@ def _compact_one(t, chars, personas):
                 "alt": False, "kind": "toggle"}
 
     words = t.split()
-    char, persona = "", ""
+    char, persona, song = "", "", ""
     w0 = re.sub(r"[^\w]", "", words[0]).upper()
     if w0 in EVERYONE:
         char = "EVERYONE"
     elif w0 in chars:
         char = w0
+    elif w0 in MIKU_SONGS:
+        char, song = "MIKU", MIKU_SONGS[w0]
+    elif words[0].upper() in TWINS_ELEMENTS:
+        char = "TWINS"
     else:
         for p in personas:
             if len(w0) >= 3 and p.upper().startswith(w0):
                 char, persona = "WONDER", p
                 break
     rest = words[1:] if char else words
+    if song or (char == "TWINS" and words[0].upper() in TWINS_ELEMENTS):
+        rest = [words[0]] + rest       # keep the song / element word
+
+    # Miku: "Heaven 2", "Miku Spring 1", "Fire S1"
+    if char == "MIKU" and rest:
+        r0 = re.sub(r"[^\w]", "", rest[0]).upper()
+        if r0 in MIKU_SONGS:
+            song = MIKU_SONGS[r0]
+            rest = rest[1:]
+            if rest and re.fullmatch(r"[123]", rest[0]):
+                rest = ["S" + rest[0]] + rest[1:]
 
     btn = ""
     if not re.search(r"\bor\b", t, re.I):          # "Guard or Heal" stays as plain text
@@ -419,6 +464,10 @@ def _compact_one(t, chars, personas):
                     rest = rest + [f"×{m.group(2)}"]
                 break
     detail = " ".join(rest)
+    detail = re.sub(r"^\s*[xX×]\s*(\d+)\b", r"×\1", detail)    # "GFB x 2" -> "×2"
+    detail = re.sub(r"^\s*-\s+", "", detail)                     # "S3 - (4)" -> "(4)"
+    if song:
+        detail = ("♪ " + song + ("   " + detail if detail else "")).strip()
     if persona:
         detail = f"{persona} → {detail}" if detail and not btn else \
                  (f"{persona}  {detail}".strip())
@@ -430,6 +479,24 @@ ACTION_RE = re.compile(r"^\s*(?P<char>[^:]{1,30}?)\s*:\s*(?P<rest>.*)$")
 ALT_RE = re.compile(r"^\s*(?:\(alt\)|alt\s*[:\-])\s*", re.I)
 
 
+def _guess_chars(raw):
+    """Names that start actions followed by a button (e.g. 'Puppet S3') in 2+ places."""
+    counts = {}
+    for line in raw.splitlines():
+        cm = COMPACT_RE.match(line)
+        if not cm:
+            continue
+        for part in split_top(cm.group("rest"), ","):
+            for sub in split_top(part, "+"):
+                w = sub.split()
+                if len(w) >= 2 and re.fullmatch(r"[A-Za-z][A-Za-z.']+", w[0]) \
+                        and BTN_TOKEN_RE.match(re.sub(r"[(),.]", "", w[1]).upper()):
+                    k = w[0].upper()
+                    if k not in MIKU_SONGS and k not in NOT_CHARS:
+                        counts[k] = counts.get(k, 0) + 1
+    return {k for k, c in counts.items() if c >= 2}
+
+
 def parse_text(raw):
     title = "Rotation"
     meta, notes, team, turns, units, personas = [], [], [], [], [], []
@@ -437,16 +504,34 @@ def parse_text(raw):
     cur = None
     first = True
     title_set = False
+    order_chars = set()
+    after_divider = False
+    break_no = 0
+    guessed = _guess_chars(raw)
 
     def known_chars():
-        return {u["name"].upper() for u in units} | {"WONDER"}
+        pnames = [p["name"].upper() for p in personas]
+        guesses = {g for g in guessed if not any(len(g) >= 3 and pn.startswith(g) for pn in pnames)}
+        return ({u["name"].upper() for u in units} | order_chars | guesses | {"WONDER"}) - NOT_CHARS
+
+    def unit_named(name):
+        u = next((x for x in units if x["name"].upper() == name.upper()), None)
+        if u is None:
+            u = _blank_unit(name)
+            units.append(u)
+        return u
 
     for line in raw.splitlines():
         if not line.strip() or line.strip().startswith("//"):
             continue
         is_first, first = first, False
 
-        # Shorthand turn lines: T1 ..., B2 ..., T7-8-9 ..., Turn 3 (11) ...
+        # "-Break-", "--- Break ---", a bare "Break": divider before the break turns
+        if DIVIDER_RE.match(line):
+            after_divider = True
+            continue
+
+        # Shorthand turn lines: T1 ..., B2 ..., T7-8-9 ..., Turn 3 (11) ..., Action 19 - T4: ...
         cm = COMPACT_RE.match(line)
         if cm:
             is_break = cm.group("kind").lower().startswith("b")
@@ -454,14 +539,25 @@ def parse_text(raw):
             ns = _turn_numbers(cm.group("nums"))
             group = (("B" if is_break else "T") + "-".join(str(n) for n in ns)) if len(ns) > 1 else ""
             rest = cm.group("rest")
+            lead = ""
+            lm = re.match(r"^\s*\(([^()]*)\)\s*(.*)$", rest)    # "(Twins Auto S3 must hit an add) ..."
+            if lm:
+                lead, rest = lm.group(1).strip(), lm.group(2)
             acts = parse_compact_actions(rest, known_chars(), [p["name"] for p in personas]) if rest else []
+            act_no = cm.group("act") or cm.group("act2")
             for k, n in enumerate(ns):
                 note = []
-                if cm.group("act") and k == 0:
-                    note.append(f"Action {cm.group('act')}")
+                if act_no and k == 0:
+                    note.append(f"Action {act_no}")
+                if lead and k == 0:
+                    note.append(lead)
                 if group:
                     note.append(f"({group} are the same)")
-                cur = {"name": f"{label} {n}", "note": "  ".join(note),
+                name = f"{label} {n}"
+                if after_divider and not is_break:          # T8 after "-Break-" -> "Break 1 (T8)"
+                    break_no += 1
+                    name = f"Break {break_no} (T{n})"
+                cur = {"name": name, "note": "  ·  ".join(note),
                        "actions": [dict(a) for a in acts]}
                 turns.append(cur)
             continue
@@ -476,27 +572,59 @@ def parse_text(raw):
             continue
 
         if cur is None:
+            if is_first:
+                # "Puppet a6 brr v2 - Credit: ARCTO"
+                cr = re.match(r"^(.*?)\s*[-|(]?\s*\b(?:credits?|by)\s*[:\-]\s*([^)]*)\)?\s*$", line, re.I)
+                if cr and cr.group(1).strip():
+                    title = cr.group(1).strip().rstrip(":-").strip()
+                    title_set = True
+                    meta.append("By: " + cr.group(2).strip())
+                    continue
             pm = SHORT_PERSONAS_RE.match(line)
             if pm:
                 personas.extend(_short_personas(pm.group(1)))
                 continue
-            um = SHORT_UNIT_RE.match(line)
-            if um and not META_RE.match(line):
-                units.append({"name": um.group(1).strip(), "tag": "", "awareness": "", "rev": "",
-                              "weapon": "", "role": "", "companion": "", "note": "",
-                              "cards": [c.strip() for c in um.group(2).split("/") if c.strip()]})
+            # "Twins > Wonder > Kotone > Puppet"  (turn order)
+            if line.count(">") >= 2:
+                names = [x.strip() for x in line.split(">") if x.strip()]
+                order_chars.update(re.sub(r"[^\w]", "", x).upper() for x in names)
+                meta.append("Order: " + "  >  ".join(names))
                 continue
+            # "Borrow Xion's Puppet"
+            bm = BORROW_RE.match(line)
+            if bm:
+                u = unit_named(bm.group(2))
+                u["tag"] = "Borrow"
+                if bm.group(1):
+                    u["note"] = (f"Borrow from {bm.group(1)}  " + u["note"]).strip()
+                if bm.group(3):
+                    u["note"] = (u["note"] + " " + bm.group(3)).strip()
+                continue
+            um = SHORT_UNIT_RE.match(line)
+            if um and not META_RE.match(line) and not is_first:
+                head, val = um.group(1).strip(), um.group(2)
+                if _looks_like_persona_list(val):
+                    # "Ice Age - Shark (passives), Dion (UT + Cohesion), Jiko (Taru + Mataru)"
+                    personas.extend(_short_personas(val))
+                    w = unit_named("Wonder")
+                    if head.upper() != "WONDER":
+                        w["weapon"] = w["weapon"] or head
+                    continue
+                parts = [p.strip() for p in re.split(r"\s+-\s+", val) if p.strip()]
+                if " " not in head and parts and ("/" in parts[0] or "+" in parts[0] or len(parts[0].split()) <= 3):
+                    u = unit_named(head)
+                    u["cards"] = [c.strip() for c in re.split(r"\s*[/+]\s*", parts[0]) if c.strip()]
+                    extra = "  ·  ".join(parts[1:])
+                    if extra:
+                        u["note"] = (u["note"] + "  " + extra).strip()
+                    continue
             if re.match(r"^\s*[\d.,]+(?:\s*[-–~]\s*[\d.,]+)?\s*(?:billion|bil|b|million|mil|m)\s*$",
                         line, re.I) and not is_first:
                 meta.append("Score: " + line.strip())
                 continue
             wm = re.match(r"^\s*(R\d+)\s+([A-Za-z].*?)\s*$", line)
             if wm and not is_first:
-                wonder = next((u for u in units if u["name"].upper() == "WONDER"), None)
-                if wonder is None:
-                    wonder = {"name": "Wonder", "tag": "", "awareness": "", "rev": "", "weapon": "",
-                              "cards": [], "role": "", "companion": "", "note": ""}
-                    units.append(wonder)
+                wonder = unit_named("Wonder")
                 wonder["rev"], wonder["weapon"] = wm.group(1).upper(), wm.group(2)
                 continue
             mm = META_RE.match(line)
