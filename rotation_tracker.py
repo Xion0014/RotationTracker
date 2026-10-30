@@ -30,7 +30,8 @@ def clean_child_env():
 
 
 def _restart_clean_if_needed():
-    if not getattr(sys, "frozen", False) or os.environ.get("RT_CLEAN_START"):
+    # Only the single-file exe unpacks to a temp folder (the Mac .app doesn't)
+    if not getattr(sys, "frozen", False) or os.environ.get("RT_CLEAN_START") or sys.platform == "darwin":
         return
     home = getattr(sys, "_MEIPASS", "")
     marker = os.path.join(home, ".rt_owner")
@@ -74,9 +75,14 @@ APP_NAME = "Rotation Tracker"
 
 # Bump this and push to main: GitHub Actions builds the exe and publishes a release,
 # and everyone's app offers the update.
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 GITHUB_REPO = "Xion0014/RotationTracker"
-EXE_ASSET = "RotationTracker.exe"
+EXE_ASSET = "RotationTracker.exe"          # Windows release file
+MAC_ASSET = "RotationTracker-mac.zip"      # macOS release file (zipped RotationTracker.app)
+IS_MAC = sys.platform == "darwin"
+UI_FONT = "Helvetica Neue" if IS_MAC else "Segoe UI"
+MOD = "Command" if IS_MAC else "Control"   # ⌘ on Mac, Ctrl elsewhere
+FONT_BASE = 1.33 if IS_MAC else 1.0        # Tk on macOS draws the same point size smaller
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".rotation_tracker.json")
 
 # ----------------------------------------------------------------------------
@@ -784,8 +790,9 @@ def fetch_latest_release():
     """Returns {version, tag, notes, exe_url, page} for the newest release."""
     with _http_get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest") as r:
         data = json.loads(r.read().decode("utf-8"))
+    want = MAC_ASSET if IS_MAC else EXE_ASSET
     exe_url = next((a["browser_download_url"] for a in data.get("assets", [])
-                    if a.get("name", "").lower() == EXE_ASSET.lower()), None)
+                    if a.get("name", "").lower() == want.lower()), None)
     tag = data.get("tag_name", "")
     return {"version": tag.lstrip("vV"), "tag": tag, "notes": (data.get("body") or "").strip(),
             "exe_url": exe_url, "page": data.get("html_url", "")}
@@ -795,20 +802,18 @@ def is_frozen():
     return bool(getattr(sys, "frozen", False))
 
 
-def install_update(release, progress=None):
-    """Download the new version next to the current one and swap it in.
-    Returns the command that starts the new version."""
-    if is_frozen():
-        target = sys.executable
-        url = release["exe_url"]
-        if not url:
-            raise RuntimeError("This release has no RotationTracker.exe attached yet.")
-    else:
-        target = os.path.abspath(__file__)
-        url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{release['tag']}/rotation_tracker.py"
+def mac_app_bundle():
+    """Path of the running RotationTracker.app (…/X.app/Contents/MacOS/X), or None."""
+    if not (IS_MAC and is_frozen()):
+        return None
+    p = os.path.abspath(sys.executable)
+    for _ in range(3):
+        p = os.path.dirname(p)
+    return p if p.endswith(".app") else None
 
-    tmp = target + ".new"
-    with _http_get(url, timeout=60) as r, open(tmp, "wb") as f:
+
+def _download(url, dest, progress=None):
+    with _http_get(url, timeout=60) as r, open(dest, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
         done = 0
         while True:
@@ -819,6 +824,65 @@ def install_update(release, progress=None):
             done += len(chunk)
             if progress:
                 progress(done, total)
+
+
+def install_update_mac(release, progress=None):
+    """Replace the whole RotationTracker.app with the one from the release zip."""
+    import shutil
+    import tempfile
+    app = mac_app_bundle()
+    if "/AppTranslocation/" in app:
+        raise RuntimeError("macOS is running the app from a temporary location, so it can't update "
+                           "itself.\n\nMove RotationTracker.app into your Applications folder, open it "
+                           "from there, and try again.")
+    if not release["exe_url"]:
+        raise RuntimeError("This release has no Mac version attached yet.")
+    parent = os.path.dirname(app)
+    if not os.access(parent, os.W_OK):
+        raise RuntimeError(f"The app doesn't have permission to replace itself in:\n{parent}")
+
+    work = tempfile.mkdtemp(prefix=".rt-update-", dir=parent)   # same disk, so the swap is a rename
+    try:
+        zpath = os.path.join(work, MAC_ASSET)
+        _download(release["exe_url"], zpath, progress)
+        # ditto keeps the bundle's symlinks, permissions and code signature intact
+        subprocess.run(["/usr/bin/ditto", "-x", "-k", zpath, work], check=True,
+                       capture_output=True)
+        new_app = next((os.path.join(work, n) for n in os.listdir(work) if n.endswith(".app")), None)
+        if not new_app or not os.path.isfile(os.path.join(new_app, "Contents", "Info.plist")):
+            raise RuntimeError("The downloaded file doesn't contain the app.")
+        subprocess.run(["/usr/bin/xattr", "-dr", "com.apple.quarantine", new_app], capture_output=True)
+
+        old = app + ".old"
+        if os.path.exists(old):
+            shutil.rmtree(old, ignore_errors=True)
+        os.rename(app, old)          # the running app keeps working from its new name
+        try:
+            os.rename(new_app, app)
+        except OSError:
+            os.rename(old, app)      # put the original back
+            raise
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return ["/usr/bin/open", "-n", app, "--args"]
+
+
+def install_update(release, progress=None):
+    """Download the new version next to the current one and swap it in.
+    Returns the command that starts the new version."""
+    if mac_app_bundle():
+        return install_update_mac(release, progress)
+    if is_frozen():
+        target = sys.executable
+        url = release["exe_url"]
+        if not url:
+            raise RuntimeError("This release has no RotationTracker.exe attached yet.")
+    else:
+        target = os.path.abspath(__file__)
+        url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{release['tag']}/rotation_tracker.py"
+
+    tmp = target + ".new"
+    _download(url, tmp, progress)
 
     # Sanity-check the download before replacing anything
     with open(tmp, "rb") as f:
@@ -843,12 +907,57 @@ def install_update(release, progress=None):
 
 
 def cleanup_old_version():
+    app = mac_app_bundle()
+    if app:
+        import shutil
+        if os.path.isdir(app + ".old"):
+            shutil.rmtree(app + ".old", ignore_errors=True)
+        return
     path = (sys.executable if is_frozen() else os.path.abspath(__file__)) + ".old"
     try:
         if os.path.exists(path):
             os.remove(path)
     except OSError:
         pass
+
+
+class FlatButton(tk.Label):
+    """A colored button. macOS ignores colors on regular buttons, so draw our own there."""
+
+    def __init__(self, parent, text, command, bg, fg, activebackground, activeforeground,
+                 font, padx, pady):
+        super().__init__(parent, text=text, bg=bg, fg=fg, font=font, padx=padx, pady=pady,
+                         cursor="pointinghand" if IS_MAC else "hand2",
+                         disabledforeground="#6b7280")
+        self._command = command
+        self._colors = (bg, fg, activebackground, activeforeground)
+        self.bind("<ButtonPress-1>", self._press)
+        self.bind("<ButtonRelease-1>", self._release)
+        self.bind("<Leave>", lambda e: self._paint(False))
+
+    def _enabled(self):
+        return str(self.cget("state")) != "disabled"
+
+    def _paint(self, down):
+        bg, fg, abg, afg = self._colors
+        super().configure(bg=abg if down else bg, fg=afg if down else fg)
+
+    def _press(self, e):
+        if self._enabled():
+            self._paint(True)
+
+    def _release(self, e):
+        self._paint(False)
+        inside = 0 <= e.x < self.winfo_width() and 0 <= e.y < self.winfo_height()
+        if self._enabled() and inside and self._command:
+            self._command()
+
+    def configure(self, cnf=None, **kw):
+        if "command" in kw:
+            self._command = kw.pop("command")
+        return super().configure(cnf, **kw)
+
+    config = configure
 
 
 # ----------------------------------------------------------------------------
@@ -891,7 +1000,12 @@ class App(tk.Tk):
 
     # ---- fonts ----
     def f(self, size, weight="normal", slant="roman"):
-        return ("Segoe UI", max(7, int(round(size * self.scale))), weight, slant)
+        return (UI_FONT, max(7, int(round(size * self.scale * FONT_BASE))), weight, slant)
+
+    def _scrollbar(self, parent, command):
+        if IS_MAC:   # the native Mac scrollbar ignores colors
+            return ttk.Scrollbar(parent, orient="vertical", command=command, style="Dark.Vertical.TScrollbar")
+        return tk.Scrollbar(parent, orient="vertical", command=command)
 
     def _style(self):
         st = ttk.Style(self)
@@ -903,11 +1017,17 @@ class App(tk.Tk):
                      foreground=FG, arrowcolor=FG)
         st.map("TCombobox", fieldbackground=[("readonly", PANEL)],
                foreground=[("readonly", FG)])
+        st.configure("Dark.Vertical.TScrollbar", background=CARD, troughcolor=BG, bordercolor=BG,
+                     arrowcolor=MUTED, lightcolor=CARD, darkcolor=CARD)
+        st.map("Dark.Vertical.TScrollbar", background=[("active", "#3a3f4b")])
         self.option_add("*TCombobox*Listbox.background", PANEL)
         self.option_add("*TCombobox*Listbox.foreground", FG)
         self.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
 
     def _btn(self, parent, text, cmd, bg=PANEL, fg=FG, size=10, bold=False, padx=10, pady=4):
+        if IS_MAC or os.environ.get("RT_FLAT_BUTTONS"):
+            return FlatButton(parent, text, cmd, bg, fg, ACCENT, "white",
+                              self.f(size, "bold" if bold else "normal"), padx, pady)
         b = tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg,
                       activebackground=ACCENT, activeforeground="white",
                       relief="flat", bd=0, cursor="hand2",
@@ -968,7 +1088,7 @@ class App(tk.Tk):
         wrap = tk.Frame(self, bg=BG)
         wrap.pack(fill="both", expand=True, padx=10, pady=(6, 0))
         self.canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0)
-        self.vsb = tk.Scrollbar(wrap, orient="vertical", command=self.canvas.yview)
+        self.vsb = self._scrollbar(wrap, self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.vsb.set)
         self.vsb.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True)
@@ -990,12 +1110,12 @@ class App(tk.Tk):
             self.bind(k, lambda e: self.prev())
         self.bind("<Home>", lambda e: self.go(0))
         self.bind("<End>", lambda e: self.go(len(self.rot["turns"]) - 1) if self.rot else None)
-        self.bind("<Control-o>", lambda e: self.choose_file())
+        self.bind(f"<{MOD}-o>", lambda e: self.choose_file())
         self.bind("<t>", lambda e: self.show_team())
         self.bind("<T>", lambda e: self.show_team())
-        self.bind("<Control-plus>", lambda e: self.zoom(0.1))
-        self.bind("<Control-equal>", lambda e: self.zoom(0.1))
-        self.bind("<Control-minus>", lambda e: self.zoom(-0.1))
+        self.bind(f"<{MOD}-plus>", lambda e: self.zoom(0.1))
+        self.bind(f"<{MOD}-equal>", lambda e: self.zoom(0.1))
+        self.bind(f"<{MOD}-minus>", lambda e: self.zoom(-0.1))
 
     def _on_wheel(self, e):
         self.canvas.yview_scroll(int(-e.delta / 120) or (-1 if e.delta > 0 else 1), "units")
@@ -1202,7 +1322,7 @@ class App(tk.Tk):
                                                   win.destroy()))
 
         canvas = tk.Canvas(win, bg=BG, highlightthickness=0)
-        vsb = tk.Scrollbar(win, orient="vertical", command=canvas.yview)
+        vsb = self._scrollbar(win, canvas.yview)
         canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
@@ -1418,7 +1538,7 @@ class App(tk.Tk):
             try:
                 # Clean environment so the new version unpacks into its own temp folder
                 subprocess.Popen(cmd + ([self.path] if self.path else []),
-                                 cwd=os.path.dirname(cmd[-1]), env=clean_child_env())
+                                 cwd=os.path.dirname(os.path.abspath(cmd[0])), env=clean_child_env())
             except Exception as e:
                 messagebox.showinfo(APP_NAME, f"Updated to v{rel['version']}. Please start the app "
                                               f"again.\n\n({e})")
