@@ -1,0 +1,13 @@
+dist/RotationTracker.app/Contents/MacOS/RotationTracker: Mach-O universal binary with 2 architectures: [x86_64:Mach-O 64-bit executable x86_64] [arm64:Mach-O 64-bit executable arm64]
+dist/RotationTracker.app/Contents/MacOS/RotationTracker (for architecture x86_64):	Mach-O 64-bit executable x86_64
+dist/RotationTracker.app/Contents/MacOS/RotationTracker (for architecture arm64):	Mach-O 64-bit executable arm64
+ProductName:		macOS
+ProductVersion:		26.6.2
+BuildVersion:		25G83
+App is running
+codesign OK
+updater returned: ['/usr/bin/open', '-n', '/Users/runner/work/_temp/apps/RotationTracker.app', '--args']
+old copy kept for cleanup: True
+new copy in place: True
+updated app codesign OK
+Updated app opened
