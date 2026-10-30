@@ -82,6 +82,7 @@ MAC_ASSET = "RotationTracker-mac.zip"      # macOS release file (zipped Rotation
 IS_MAC = sys.platform == "darwin"
 UI_FONT = "Helvetica Neue" if IS_MAC else "Segoe UI"
 MOD = "Command" if IS_MAC else "Control"   # ⌘ on Mac, Ctrl elsewhere
+FONT_BASE = 1.33 if IS_MAC else 1.0        # Tk on macOS draws the same point size smaller
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".rotation_tracker.json")
 
 # ----------------------------------------------------------------------------
@@ -999,7 +1000,12 @@ class App(tk.Tk):
 
     # ---- fonts ----
     def f(self, size, weight="normal", slant="roman"):
-        return (UI_FONT, max(7, int(round(size * self.scale))), weight, slant)
+        return (UI_FONT, max(7, int(round(size * self.scale * FONT_BASE))), weight, slant)
+
+    def _scrollbar(self, parent, command):
+        if IS_MAC:   # the native Mac scrollbar ignores colors
+            return ttk.Scrollbar(parent, orient="vertical", command=command, style="Dark.Vertical.TScrollbar")
+        return tk.Scrollbar(parent, orient="vertical", command=command)
 
     def _style(self):
         st = ttk.Style(self)
@@ -1011,6 +1017,9 @@ class App(tk.Tk):
                      foreground=FG, arrowcolor=FG)
         st.map("TCombobox", fieldbackground=[("readonly", PANEL)],
                foreground=[("readonly", FG)])
+        st.configure("Dark.Vertical.TScrollbar", background=CARD, troughcolor=BG, bordercolor=BG,
+                     arrowcolor=MUTED, lightcolor=CARD, darkcolor=CARD)
+        st.map("Dark.Vertical.TScrollbar", background=[("active", "#3a3f4b")])
         self.option_add("*TCombobox*Listbox.background", PANEL)
         self.option_add("*TCombobox*Listbox.foreground", FG)
         self.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
@@ -1079,7 +1088,7 @@ class App(tk.Tk):
         wrap = tk.Frame(self, bg=BG)
         wrap.pack(fill="both", expand=True, padx=10, pady=(6, 0))
         self.canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0)
-        self.vsb = tk.Scrollbar(wrap, orient="vertical", command=self.canvas.yview)
+        self.vsb = self._scrollbar(wrap, self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.vsb.set)
         self.vsb.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True)
@@ -1313,7 +1322,7 @@ class App(tk.Tk):
                                                   win.destroy()))
 
         canvas = tk.Canvas(win, bg=BG, highlightthickness=0)
-        vsb = tk.Scrollbar(win, orient="vertical", command=canvas.yview)
+        vsb = self._scrollbar(win, canvas.yview)
         canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
